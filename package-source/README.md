@@ -11,17 +11,17 @@ The Vercel connector currently lacks project-creation permission, so the Supabas
 
 The catalog is pinned to Git commit:
 
-`57a82cea61f2a5b9dd1e3c5ddaa90dd0797314af`
+`7d3c1561b8d6f64133641121c7cc451771bf4d33`
 
 That commit contains:
 
 - `release.json`
-- the exact CI-qualified v0005 SPK
+- the exact CI-qualified v0006 SPK
 - 64x64 and 256x256 package icons
 
 The SPK SHA-256 is:
 
-`de78508d584d687de052102b9ac1c01d1344cedb5456466be592f8e04664e50b`
+`fdb3bf8b4d358cca397b4688d3e25ce01d1ef8df43f3a7d4d5a965eb4c1ee22c`
 
 The Supabase function fetches only the pinned release manifest and serves catalog links back to immutable raw GitHub URLs under the same commit.
 

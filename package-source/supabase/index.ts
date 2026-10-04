@@ -1,4 +1,4 @@
-const SOURCE_COMMIT = "57a82cea61f2a5b9dd1e3c5ddaa90dd0797314af";
+const SOURCE_COMMIT = "7d3c1561b8d6f64133641121c7cc451771bf4d33";
 const rawBase =
   `https://raw.githubusercontent.com/thebrazenbeard/tattler/${SOURCE_COMMIT}/package-source/public`;
 const releaseUrl =
