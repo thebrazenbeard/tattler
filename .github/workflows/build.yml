@@ -53,6 +53,10 @@ jobs:
           git clone -q https://github.com/thebrazenbeard/spk-packager.git /tmp/spk-packager
           git -C /tmp/spk-packager checkout -q 89085efb9e439dfd05f26ad56d857ef71f2d52b1
           PYTHONPATH=/tmp/spk-packager/src python -m spk_packager.cli verify dist/Tattler-armada38x-0.1.0-0006.spk --json
+      - uses: actions/upload-artifact@v4
+        with:
+          name: tattler-armada38x-spk
+          path: dist/Tattler-armada38x-0.1.0-0006.spk
       - name: Verify published package source binds exact SPK
         run: |
           tmp="$(mktemp -d)"
@@ -65,7 +69,3 @@ jobs:
           cmp package-source/public/icons/PACKAGE_ICON_256.PNG "$tmp/public/icons/PACKAGE_ICON_256.PNG"
           cmp package-source/public/releases/Tattler-armada38x-0.1.0-0006.spk "$tmp/public/releases/Tattler-armada38x-0.1.0-0006.spk"
           (cd "$tmp" && node test.js)
-      - uses: actions/upload-artifact@v4
-        with:
-          name: tattler-armada38x-spk
-          path: dist/Tattler-armada38x-0.1.0-0006.spk
