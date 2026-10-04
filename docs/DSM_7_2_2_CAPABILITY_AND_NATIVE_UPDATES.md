@@ -120,14 +120,21 @@ Rejected candidate `0.1.0-0006`:
 
 Current source candidate `0.1.0-0007`:
 
-`PACKAGE_USER_ONLY / UID_OWNER_ATTRIBUTION_IMPLEMENTED / CI_PENDING / NOT PUBLISHED / NOT INSTALLED`
+`PACKAGE_USER_ONLY / UID_OWNER_ATTRIBUTION_IMPLEMENTED / EXACT_HEAD_CI_PASS / PUBLISHED / LIVE_FEED_PASS / NOT INSTALLED`
+
+Publication evidence:
+- release commit `427db77274bc877b2b7d04c4970210bcda237f9e` passed exact-head CI run #30;
+- feed-pointer commit `4dda8de50e07673921b696fff11a9fc6774f7961` passed exact-head CI run #32;
+- deployed Supabase Edge Function `tattler-package-source` is version 3 and points only at the immutable v0007 release commit;
+- live GET and POST both return `0.1.0-0007`;
+- returned SPK SHA-256 is `a70428e2d9a0f132e5eb3b12d7c7c3608b12601200c023c51354083ea4b8b736`;
+- DS216 itself can reach the v0007 feed;
+- live v0003 API socket UIDs were resolved through `/etc/passwd` to real accounts including `http` (1023), `tailscale` (165290), and `WorkBridgeRelay` (265891), validating the unprivileged owner-label evidence path.
 
 v0007 becomes a runtime PASS only after:
-1. exact-head CI passes;
-2. the exact CI artifact is bound into the package source;
-3. the live Supabase feed advances to that immutable release commit;
-4. DSM Package Center discovers v0007;
-5. DSM installs it without the root-privilege rejection;
-6. direct readback proves `0.1.0-0007` is running as user `Tattler`;
-7. API records demonstrate owner attribution from socket UID;
-8. overhead remains within the DS216 budget.
+1. DSM Package Center refreshes to v0007;
+2. DSM installs it without the root-privilege rejection;
+3. direct readback proves `0.1.0-0007` is running as user `Tattler`;
+4. API records demonstrate `owner` attribution from socket UID;
+5. exact PID attribution remains separately bounded to readable FD evidence;
+6. overhead remains within the DS216 budget.

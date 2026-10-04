@@ -114,7 +114,9 @@ v0006:
 
 Current source subject `0.1.0-0007`:
 
-`PACKAGE_USER_ONLY / UID_OWNER_ATTRIBUTION_IMPLEMENTED / NATIVE_UPGRADE_METADATA_IMPLEMENTED / CI_PENDING / NOT INSTALLED / RUNTIME_NOT_QUALIFIED`
+`PACKAGE_USER_ONLY / UID_OWNER_ATTRIBUTION_IMPLEMENTED / EXACT_HEAD_CI_PASS / PACKAGE_SOURCE_LIVE / NAS_FEED_REACHABILITY_PASS / NOT INSTALLED / RUNTIME_NOT_QUALIFIED`
+
+Live v0003 socket evidence confirms the kernel UID field is usable without added privilege: observed UIDs map through `/etc/passwd` to accounts including `http`, `tailscale`, and `WorkBridgeRelay`.
 
 See `docs/DSM_7_2_2_RUNTIME_QUALIFICATION_20261004.md` for the live v0002/v0003 measurements and `docs/DSM_7_2_2_CAPABILITY_AND_NATIVE_UPDATES.md` for the rejected privilege experiments and current update architecture.
 

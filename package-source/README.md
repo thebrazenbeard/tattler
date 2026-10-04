@@ -18,7 +18,7 @@ The source tree now contains the exact CI-qualified v0007 artifact:
 - size: `2,273,280` bytes
 - privilege model: package-user only; no root lifecycle actions and no file capabilities
 
-The source-controlled Supabase function now points at green immutable release commit `427db77274bc877b2b7d04c4970210bcda237f9e`. The deployed function remains on v0006 until this pointer commit passes exact-head CI; deployment follows only after that gate.
+The source-controlled Supabase function points at green immutable release commit `427db77274bc877b2b7d04c4970210bcda237f9e`. Feed-pointer commit `4dda8de50e07673921b696fff11a9fc6774f7961` passed exact-head CI run #32, and deployed Edge Function version 3 now serves that exact v0007 release.
 
 v0006 remains historical publication evidence: DSM discovered it successfully but rejected installation because its `cap_sys_ptrace` helper was classified as root-privileged.
 
