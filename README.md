@@ -64,6 +64,14 @@ Linux runtime:
 
 ## Status
 
+Current source/package subject `0.1.0-0003`:
+
 `SOURCE_IMPLEMENTED / LOCAL_TEST_PASS / ARMV7_BUILD_PASS / SPK_STRUCTURAL_VERIFY_PASS / NOT INSTALLED / NOT NAS_RUNTIME_QUALIFIED`
+
+Installed predecessor `0.1.0-0002` on DS216 / DSM 7.2.2:
+
+`PACKAGE_CENTER_INSTALL_PASS / LIFECYCLE_START_PASS / LIVE_DAEMON_PASS / LOOPBACK_API_PASS / SYSTEM_TELEMETRY_PASS / CONNECTION_ENDPOINT_VISIBILITY_PASS / CROSS_USER_PROCESS_ATTRIBUTION_LIMITED`
+
+See `docs/DSM_7_2_2_RUNTIME_QUALIFICATION_20261004.md` for the exact live subject, measurements, evidence ceiling, and observed Plex/storage stall.
 
 Source, build, SPK verification, Package Center installation, live DSM service behavior, capture completeness, and diagnostic validity are separate evidence states.
