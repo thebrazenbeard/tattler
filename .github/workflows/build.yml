@@ -19,6 +19,7 @@ jobs:
           go vet ./...
           python3 -m py_compile tools/build_spk.py tools/verify_spk.py tools/update_package_source.py
           for script in spk/scripts/*; do sh -n "$script"; done
+          node package-source/test.js
       - name: Build ARMv7 twice
         env:
           CGO_ENABLED: '0'
@@ -47,13 +48,17 @@ jobs:
           cmp dist/Tattler-a.spk dist/Tattler-b.spk
           mv dist/Tattler-a.spk dist/Tattler-armada38x-0.1.0-0005.spk
           rm dist/Tattler-b.spk
-      - name: Exercise package source contract
+      - name: Verify published package source binds exact SPK
         run: |
           tmp="$(mktemp -d)"
           mkdir -p "$tmp/api" "$tmp/public/releases" "$tmp/public/icons"
           cp package-source/api/catalog.js "$tmp/api/catalog.js"
           cp package-source/package.json package-source/test.js package-source/vercel.json "$tmp/"
           python3 tools/update_package_source.py --spk dist/Tattler-armada38x-0.1.0-0005.spk --output "$tmp" --icons-dir spk
+          cmp package-source/release.json "$tmp/release.json"
+          cmp package-source/public/icons/PACKAGE_ICON.PNG "$tmp/public/icons/PACKAGE_ICON.PNG"
+          cmp package-source/public/icons/PACKAGE_ICON_256.PNG "$tmp/public/icons/PACKAGE_ICON_256.PNG"
+          cmp package-source/public/releases/Tattler-armada38x-0.1.0-0005.spk "$tmp/public/releases/Tattler-armada38x-0.1.0-0005.spk"
           (cd "$tmp" && node test.js)
       - uses: actions/upload-artifact@v4
         with:
