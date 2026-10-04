@@ -8,7 +8,8 @@ import tarfile
 from pathlib import Path
 
 REQUIRED_OUTER = {
-    "INFO", "conf/privilege", "conf/resource", "package.tgz",
+    "INFO", "PACKAGE_ICON.PNG", "PACKAGE_ICON_256.PNG",
+    "conf/privilege", "conf/resource", "package.tgz",
     "scripts/start-stop-status", "scripts/preinst", "scripts/postinst",
     "scripts/preuninst", "scripts/postuninst", "scripts/preupgrade", "scripts/postupgrade",
 }
@@ -28,6 +29,14 @@ def safe_members(tf: tarfile.TarFile) -> list[tarfile.TarInfo]:
             raise ValueError(f"non-deterministic metadata: {member.name}")
     return members
 
+def verify_png(data: bytes, width: int, height: int, name: str) -> None:
+    signature = b"\x89PNG\r\n\x1a\n"
+    if len(data) < 24 or data[:8] != signature or data[12:16] != b"IHDR":
+        raise ValueError(f"{name} is not a valid PNG")
+    actual = struct.unpack(">II", data[16:24])
+    if actual != (width, height):
+        raise ValueError(f"{name} must be {width}x{height}, got {actual[0]}x{actual[1]}")
+
 def verify(path: Path) -> dict[str, int]:
     with tarfile.open(path, "r:") as outer:
         outer_members = safe_members(outer)
@@ -36,6 +45,11 @@ def verify(path: Path) -> dict[str, int]:
         if missing:
             raise ValueError(f"missing outer members: {sorted(missing)}")
         package = outer.extractfile("package.tgz").read()
+        icon_64 = outer.extractfile("PACKAGE_ICON.PNG").read()
+        icon_256 = outer.extractfile("PACKAGE_ICON_256.PNG").read()
+
+    verify_png(icon_64, 64, 64, "PACKAGE_ICON.PNG")
+    verify_png(icon_256, 256, 256, "PACKAGE_ICON_256.PNG")
 
     with tarfile.open(fileobj=io.BytesIO(package), mode="r:gz") as inner:
         inner_members = safe_members(inner)
