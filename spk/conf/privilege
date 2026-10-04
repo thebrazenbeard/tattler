@@ -3,18 +3,13 @@
     "run-as": "package"
   },
   "username": "Tattler",
-  "ctrl-script": [
+  "tool": [
     {
-      "action": "postinst",
-      "run-as": "root"
-    },
-    {
-      "action": "postupgrade",
-      "run-as": "root"
-    },
-    {
-      "action": "preuninst",
-      "run-as": "root"
+      "relpath": "bin/tattler-procmap",
+      "user": "package",
+      "group": "package",
+      "capabilities": "cap_sys_ptrace",
+      "permission": "0700"
     }
   ]
 }

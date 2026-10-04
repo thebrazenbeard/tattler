@@ -17,11 +17,8 @@ jobs:
         run: |
           go test ./...
           go vet ./...
-          python3 -m py_compile tools/build_spk.py tools/verify_spk.py tools/verify_bridge_sources.py tools/sign_spk.py
-          python3 tools/verify_bridge_sources.py
-          sh -n bridge/tattler-pkgctl
+          python3 -m py_compile tools/build_spk.py tools/verify_spk.py tools/update_package_source.py
           for script in spk/scripts/*; do sh -n "$script"; done
-          visudo -c -f bridge/sudoers.tattler-pkgctl
       - name: Build ARMv7 twice
         env:
           CGO_ENABLED: '0'
@@ -35,16 +32,30 @@ jobs:
           cmp dist/tattler-armv7-a dist/tattler-armv7-b
           mv dist/tattler-armv7-a dist/tattler-linux-armv7
           rm dist/tattler-armv7-b
+
+          go build -trimpath -buildvcs=false -ldflags='-s -w -buildid=' -o dist/tattler-procmap-armv7-a ./cmd/tattler-procmap
+          go build -trimpath -buildvcs=false -ldflags='-s -w -buildid=' -o dist/tattler-procmap-armv7-b ./cmd/tattler-procmap
+          cmp dist/tattler-procmap-armv7-a dist/tattler-procmap-armv7-b
+          mv dist/tattler-procmap-armv7-a dist/tattler-procmap-linux-armv7
+          rm dist/tattler-procmap-armv7-b
       - name: Build and verify SPK twice
         run: |
-          python3 tools/build_spk.py --binary dist/tattler-linux-armv7 --output dist/Tattler-a.spk
-          python3 tools/build_spk.py --binary dist/tattler-linux-armv7 --output dist/Tattler-b.spk
+          python3 tools/build_spk.py --binary dist/tattler-linux-armv7 --helper dist/tattler-procmap-linux-armv7 --output dist/Tattler-a.spk
+          python3 tools/build_spk.py --binary dist/tattler-linux-armv7 --helper dist/tattler-procmap-linux-armv7 --output dist/Tattler-b.spk
           python3 tools/verify_spk.py dist/Tattler-a.spk
           python3 tools/verify_spk.py dist/Tattler-b.spk
           cmp dist/Tattler-a.spk dist/Tattler-b.spk
-          mv dist/Tattler-a.spk dist/Tattler-armada38x-0.1.0-0004.spk
+          mv dist/Tattler-a.spk dist/Tattler-armada38x-0.1.0-0005.spk
           rm dist/Tattler-b.spk
+      - name: Exercise package source contract
+        run: |
+          tmp="$(mktemp -d)"
+          mkdir -p "$tmp/api" "$tmp/public/releases" "$tmp/public/icons"
+          cp package-source/api/catalog.js "$tmp/api/catalog.js"
+          cp package-source/package.json package-source/test.js package-source/vercel.json "$tmp/"
+          python3 tools/update_package_source.py --spk dist/Tattler-armada38x-0.1.0-0005.spk --output "$tmp" --icons-dir spk
+          (cd "$tmp" && node test.js)
       - uses: actions/upload-artifact@v4
         with:
           name: tattler-armada38x-spk
-          path: dist/Tattler-armada38x-0.1.0-0004.spk
+          path: dist/Tattler-armada38x-0.1.0-0005.spk

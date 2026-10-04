@@ -1,5 +1,6 @@
 dist/
 *.spk
+!package-source/public/releases/*.spk
 *.log
 tattler-state/
 __pycache__/

@@ -23,28 +23,24 @@ def tarinfo(name: str, size: int, mode: int) -> tarfile.TarInfo:
 def add_bytes(tf: tarfile.TarFile, name: str, data: bytes, mode: int) -> None:
     tf.addfile(tarinfo(name, len(data), mode), io.BytesIO(data))
 
-def validate_arm_elf(data: bytes) -> None:
+def validate_arm_elf(data: bytes, label: str) -> None:
     if len(data) < 20 or data[:4] != b"\x7fELF":
-        raise ValueError("binary is not ELF")
+        raise ValueError(f"{label} is not ELF")
     endian = "<" if data[5] == 1 else ">"
     machine = struct.unpack(endian + "H", data[18:20])[0]
     if machine != 40:
-        raise ValueError(f"expected ARM ELF e_machine=40, got {machine}")
+        raise ValueError(f"{label}: expected ARM ELF e_machine=40, got {machine}")
 
-def build(binary: Path, output: Path) -> None:
+def build(binary: Path, helper: Path, output: Path) -> None:
     binary_bytes = binary.read_bytes()
-    validate_arm_elf(binary_bytes)
+    helper_bytes = helper.read_bytes()
+    validate_arm_elf(binary_bytes, "tattler")
+    validate_arm_elf(helper_bytes, "tattler-procmap")
 
     payload_raw = io.BytesIO()
     with tarfile.open(fileobj=payload_raw, mode="w:") as inner:
         add_bytes(inner, "bin/tattler", binary_bytes, 0o755)
-        bridge_files = [
-            ("share/tattler-pkgctl/allowed_signers", ROOT / "bridge" / "tattler-release.allowed_signers", 0o644),
-            ("share/tattler-pkgctl/sudoers.tattler-pkgctl", ROOT / "bridge" / "sudoers.tattler-pkgctl", 0o644),
-            ("share/tattler-pkgctl/tattler-pkgctl", ROOT / "bridge" / "tattler-pkgctl", 0o755),
-        ]
-        for name, source, mode in bridge_files:
-            add_bytes(inner, name, source.read_bytes(), mode)
+        add_bytes(inner, "bin/tattler-procmap", helper_bytes, 0o700)
 
     package_buf = io.BytesIO()
     with gzip.GzipFile(fileobj=package_buf, mode="wb", mtime=0, filename="") as gz:
@@ -67,9 +63,10 @@ def build(binary: Path, output: Path) -> None:
 def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("--binary", type=Path, required=True)
+    parser.add_argument("--helper", type=Path, required=True)
     parser.add_argument("--output", type=Path, required=True)
     args = parser.parse_args()
-    build(args.binary, args.output)
+    build(args.binary, args.helper, args.output)
     print(args.output)
     return 0
 

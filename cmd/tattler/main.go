@@ -30,6 +30,7 @@ func main() {
 		listen          = flag.String("listen", "127.0.0.1:9147", "HTTP listen address")
 		stateDir        = flag.String("state-dir", "./tattler-state", "persistent state directory")
 		procRoot        = flag.String("proc-root", "/proc", "proc filesystem root")
+		procmapHelper   = flag.String("procmap-helper", "", "optional privileged procmap helper path; defaults to sibling tattler-procmap")
 		poll            = flag.Duration("poll", time.Second, "connection sampling interval")
 		metricsInterval = flag.Duration("metrics-interval", 5*time.Second, "system/process sampling interval")
 		maxLogMB        = flag.Int64("max-log-mb", 32, "rotate event log at this size")
@@ -57,6 +58,12 @@ func main() {
 	if err != nil {
 		log.Fatal(err)
 	}
+	helperPath := *procmapHelper
+	if helperPath == "" {
+		if exe, exeErr := os.Executable(); exeErr == nil {
+			helperPath = filepath.Join(filepath.Dir(exe), "tattler-procmap")
+		}
+	}
 	journal, err := store.Open(statePath, *maxLogMB*1024*1024, *keepLogs)
 	if err != nil {
 		log.Fatal(err)
@@ -80,7 +87,7 @@ func main() {
 		log.Printf("initial proc scan warning: %v", err)
 	}
 	cache := make(map[uint64]model.ProcessInfo)
-	initial := decorate(snap, *procRoot, local, cache)
+	initial := decorate(snap, *procRoot, helperPath, local, cache)
 	tr.Baseline(initial)
 	uiState.SetCurrent(initial)
 
@@ -112,7 +119,7 @@ func main() {
 			if err != nil {
 				log.Printf("proc scan warning: %v", err)
 			}
-			current := decorate(snap, *procRoot, local, cache)
+			current := decorate(snap, *procRoot, helperPath, local, cache)
 			opened, closed := tr.Diff(current)
 			now := time.Now().UTC()
 			events := make([]model.Event, 0, len(opened)+len(closed))
@@ -138,7 +145,7 @@ func main() {
 	}
 }
 
-func decorate(snap procnet.Snapshot, procRoot string, local map[netip.Addr]struct{}, cache map[uint64]model.ProcessInfo) []model.Connection {
+func decorate(snap procnet.Snapshot, procRoot, helperPath string, local map[netip.Addr]struct{}, cache map[uint64]model.ProcessInfo) []model.Connection {
 	wanted := make(map[uint64]struct{})
 	for _, c := range snap.Connections {
 		if c.Inode != 0 {
@@ -147,7 +154,7 @@ func decorate(snap procnet.Snapshot, procRoot string, local map[netip.Addr]struc
 			}
 		}
 	}
-	for inode, p := range procmap.Resolve(procRoot, wanted) {
+	for inode, p := range procmap.ResolveBestEffort(procRoot, helperPath, wanted) {
 		cache[inode] = p
 	}
 	out := make([]model.Connection, 0, len(snap.Connections))
