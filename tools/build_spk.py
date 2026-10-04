@@ -32,24 +32,20 @@ def validate_arm_elf(data: bytes, label: str) -> None:
     if machine != 40:
         raise ValueError(f"{label}: expected ARM ELF e_machine=40, got {machine}")
 
-def build(binary: Path, helper: Path, output: Path) -> None:
+def build(binary: Path, output: Path) -> None:
     binary_bytes = binary.read_bytes()
-    helper_bytes = helper.read_bytes()
     validate_arm_elf(binary_bytes, "tattler")
-    validate_arm_elf(helper_bytes, "tattler-procmap")
 
     payload_raw = io.BytesIO()
     with tarfile.open(fileobj=payload_raw, mode="w:") as inner:
         add_bytes(inner, "bin/tattler", binary_bytes, 0o755)
-        add_bytes(inner, "bin/tattler-procmap", helper_bytes, 0o700)
 
     package_buf = io.BytesIO()
     with gzip.GzipFile(fileobj=package_buf, mode="wb", mtime=0, filename="") as gz:
         gz.write(payload_raw.getvalue())
     package_tgz = package_buf.getvalue()
     package_checksum = hashlib.md5(package_tgz, usedforsecurity=False).hexdigest()
-    payload_bytes = len(binary_bytes) + len(helper_bytes)
-    extractsize_kb = (payload_bytes + 1023) // 1024
+    extractsize_kb = (len(binary_bytes) + 1023) // 1024
 
     info_lines = []
     for line in (SPK / "INFO").read_text(encoding="utf-8").splitlines():
@@ -78,10 +74,9 @@ def build(binary: Path, helper: Path, output: Path) -> None:
 def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("--binary", type=Path, required=True)
-    parser.add_argument("--helper", type=Path, required=True)
     parser.add_argument("--output", type=Path, required=True)
     args = parser.parse_args()
-    build(args.binary, args.helper, args.output)
+    build(args.binary, args.output)
     print(args.output)
     return 0
 

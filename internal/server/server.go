@@ -181,7 +181,7 @@ async function tick(){
  document.getElementById('load').textContent=Number(s.load1||0).toFixed(2);
  document.getElementById('mem').textContent=s.mem_total_kb?((s.mem_available_kb/s.mem_total_kb)*100).toFixed(1)+'%':'-';
  document.getElementById('findings').innerHTML=fs.length?fs.map(f=>'<div class="finding"><b>'+esc(f.severity).toUpperCase()+': '+esc(f.summary)+'</b><br>'+esc(f.evidence)+'</div>').join(''):'None';
- document.getElementById('connections').innerHTML=cs.map(c=>'<tr><td class="'+esc(c.direction)+'">'+esc(c.direction)+'</td><td>'+esc((c.process&&c.process.name)||'?')+((c.process&&c.process.pid)?' ('+esc(c.process.pid)+')':'')+'</td><td>'+esc(c.protocol)+'</td><td><code>'+esc(c.local)+'</code></td><td><code>'+esc(c.remote)+'</code></td><td>'+esc(c.state)+'</td></tr>').join('');
+ document.getElementById('connections').innerHTML=cs.map(c=>'<tr><td class="'+esc(c.direction)+'">'+esc(c.direction)+'</td><td>'+esc((c.process&&c.process.name)||c.owner||'?')+((c.process&&c.process.pid)?' ('+esc(c.process.pid)+')':'')+'</td><td>'+esc(c.protocol)+'</td><td><code>'+esc(c.local)+'</code></td><td><code>'+esc(c.remote)+'</code></td><td>'+esc(c.state)+'</td></tr>').join('');
 }
 tick();setInterval(tick,2000)
 </script></body></html>`)

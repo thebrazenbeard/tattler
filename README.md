@@ -11,7 +11,7 @@ The first deployment target is Synology DSM on DS216-class ARMv7 hardware, but t
 Tattler combines two read-only evidence streams:
 
 - system/process telemetry from Linux `/proc`: CPU use, load, I/O wait, memory and swap pressure, major faults, disk throughput, and top processes by CPU/RSS/I/O;
-- host connection telemetry from `/proc/net/tcp`, `tcp6`, `udp`, and `udp6`, with best-effort PID/process attribution.
+- host connection telemetry from `/proc/net/tcp`, `tcp6`, `udp`, and `udp6`, with best-effort exact PID attribution plus unprivileged socket-owner attribution.
 
 The diagnosis layer emits bounded findings such as `memory-pressure`, `swap-churn`, `storage-wait`, `cpu-saturation`, `blocked-load`, and `major-faults`. Findings report the supporting measurement rather than pretending to establish a root cause the evidence cannot prove.
 
@@ -27,13 +27,38 @@ The loopback-only dashboard/API exposes:
 
 ## DSM privilege model
 
-The DSM package itself remains `run-as: package`; Tattler does not request root lifecycle actions.
+The active DSM package is deliberately ordinary:
 
-DSM 7 documents file capabilities for individual package tools. Tattler v0006 moves cross-user socket-to-process attribution into a tiny sibling executable, `bin/tattler-procmap`, and requests only `cap_sys_ptrace` for that helper. The HTTP/API daemon itself receives no capability.
+```json
+{
+  "defaults": {
+    "run-as": "package"
+  },
+  "username": "Tattler"
+}
+```
 
-The daemon first resolves process ownership normally. It invokes the helper only for still-unresolved socket inodes, then caches successful mappings. This keeps the elevated surface small and avoids repeatedly scanning all processes when existing mappings are already known.
+It requests no root lifecycle actions, no setuid executable, and no Linux file capabilities.
 
-Whether `cap_sys_ptrace` is sufficient on the DS216's actual DSM 7.2.2 `/proc` policy remains a live-runtime qualification question. The package does not promote that design intent into a success claim until installed and read back.
+Two privilege experiments were rejected by live DSM 7.2.2 before installation:
+
+- v0004: root lifecycle bootstrap helper;
+- v0006: package-user helper carrying `cap_sys_ptrace`.
+
+Synology documents file capabilities in `conf/privilege`, but this DS216's Package Center nevertheless classifies the capability-bearing v0006 SPK as a root-privileged package and refuses the unsigned package. Live installer behavior is therefore the governing compatibility evidence for this NAS.
+
+## Unprivileged connection attribution
+
+Linux `/proc/net/{tcp,tcp6,udp,udp6}` already exposes the numeric UID that owns each socket.
+
+Tattler v0007 uses that evidence directly:
+
+- retain exact PID/name/executable only when the package user can prove the socket inode through readable `/proc/<pid>/fd` links;
+- always preserve the socket UID from the kernel table;
+- resolve UID to account name from `/etc/passwd`;
+- expose that account as `owner` when exact PID attribution is unavailable.
+
+For DSM package services this is often still useful: a connection can be attributed to an account such as `PlexMediaServer` without falsely claiming which Plex worker owns the socket.
 
 ## Native DSM updates
 
@@ -44,11 +69,9 @@ The SPK declares:
 - `silent_upgrade="yes"`
 - `auto_upgrade_from="0.1.0-0003"`
 
-The repository also contains `package-source/`, a small DSM package-source endpoint that implements the NAS catalog shape used by third-party repositories. It serves only `armada38x` hosts at DSM build `72806` or newer and binds each catalog entry to the exact qualified SPK's MD5, size, version, icons, and download URL.
+The repository contains `package-source/`, a DSM package-source endpoint serving compatible `armada38x` hosts at DSM build `72806` or newer. The release manifest is derived from the finished SPK, and CI requires the published SPK to equal the deterministic CI artifact byte-for-byte.
 
-`tools/update_package_source.py` derives that release manifest from the finished SPK rather than maintaining it by hand.
-
-The rejected root-bridge experiment is preserved under `archive/rejected-root-bridge-v0004/` as historical evidence only. It is not part of the active package or CI path.
+The live DSM Package Source is already registered on the DS216 as `Tattler`.
 
 ## Performance posture
 
@@ -56,9 +79,9 @@ The DS216 has a very small resource budget. Connection sampling defaults to 1 se
 
 ## Evidence ceiling
 
-V0.1 is a sampling diagnostic agent, not a packet sniffer or kernel tracing engine. Very short connections can occur between samples. Unconnected inbound UDP is not represented as a connection. PID attribution can race process exit or be blocked by permissions. Linux namespaces and NAT can also limit what the host view proves.
+V0.1 is a sampling diagnostic agent, not a packet sniffer or kernel tracing engine. Very short connections can occur between samples. Unconnected inbound UDP is not represented as a connection. Exact PID attribution can race process exit or be blocked by permissions. UID/account ownership is weaker than exact PID attribution and is reported separately.
 
-A future collector can add event-driven Netfilter conntrack where compatible without replacing the event/API contract. Packet/eBPF backends are reserved for hosts where the kernel, privilege model, and hardware budget justify them.
+Linux namespaces and NAT can also limit what the host view proves.
 
 ## Build and verification
 
@@ -70,28 +93,29 @@ CGO_ENABLED=0 GOOS=linux GOARCH=arm GOARM=7 \
   go build -trimpath -buildvcs=false -ldflags='-s -w -buildid=' \
   -o dist/tattler-linux-armv7 ./cmd/tattler
 
-CGO_ENABLED=0 GOOS=linux GOARCH=arm GOARM=7 \
-  go build -trimpath -buildvcs=false -ldflags='-s -w -buildid=' \
-  -o dist/tattler-procmap-linux-armv7 ./cmd/tattler-procmap
-
 python tools/build_spk.py \
   --binary dist/tattler-linux-armv7 \
-  --helper dist/tattler-procmap-linux-armv7 \
-  --output dist/Tattler-armada38x-0.1.0-0006.spk
+  --output dist/Tattler-armada38x-0.1.0-0007.spk
 
-python tools/verify_spk.py dist/Tattler-armada38x-0.1.0-0006.spk
+python tools/verify_spk.py dist/Tattler-armada38x-0.1.0-0007.spk
 ```
+
+CI also runs the independent strict DSM 7.2.2 verifier from `thebrazenbeard/spk-packager@89085efb9e439dfd05f26ad56d857ef71f2d52b1`.
 
 ## Status
 
 Installed `0.1.0-0003` on DS216 / DSM 7.2.2:
 
-`PACKAGE_CENTER_UPGRADE_PASS / LIVE_DAEMON_PASS / LOOPBACK_API_PASS / SYSTEM_TELEMETRY_PASS / CONNECTION_ENDPOINT_VISIBILITY_PASS / CROSS_USER_PROCESS_ATTRIBUTION_LIMITED`
+`PACKAGE_CENTER_UPGRADE_PASS / LIVE_DAEMON_PASS / LOOPBACK_API_PASS / SYSTEM_TELEMETRY_PASS / CONNECTION_ENDPOINT_VISIBILITY_PASS / CROSS_USER_EXACT_PID_ATTRIBUTION_LIMITED`
 
-Current source subject `0.1.0-0006`:
+v0006:
 
-`UNPRIVILEGED_DESIGN_IMPLEMENTED / CAPABILITY_HELPER_SOURCE_IMPLEMENTED / NATIVE_UPGRADE_METADATA_IMPLEMENTED / PACKAGE_SOURCE_IMPLEMENTED / CI_PENDING / NOT INSTALLED / CAPABILITY_NOT_RUNTIME_QUALIFIED`
+`SOURCE_BUILD_PASS / PACKAGE_SOURCE_DISCOVERY_PASS / DSM_INSTALL_REJECTED_ROOT_PRIVILEGE_CLASSIFICATION / NEVER_INSTALLED`
 
-See `docs/DSM_7_2_2_RUNTIME_QUALIFICATION_20261004.md` for the live v0002/v0003 measurements and `archive/rejected-root-bridge-v0004/` for the superseded root-bridge attempt.
+Current source subject `0.1.0-0007`:
 
-Source, build, package-source publication, Package Center discovery, installation, file-capability readback, daemon runtime, and behavioral qualification are separate evidence states.
+`PACKAGE_USER_ONLY / UID_OWNER_ATTRIBUTION_IMPLEMENTED / NATIVE_UPGRADE_METADATA_IMPLEMENTED / CI_PENDING / NOT INSTALLED / RUNTIME_NOT_QUALIFIED`
+
+See `docs/DSM_7_2_2_RUNTIME_QUALIFICATION_20261004.md` for the live v0002/v0003 measurements and `docs/DSM_7_2_2_CAPABILITY_AND_NATIVE_UPDATES.md` for the rejected privilege experiments and current update architecture.
+
+Source, build, package publication, Package Center discovery, installation, daemon runtime, and behavioral qualification are separate evidence states.

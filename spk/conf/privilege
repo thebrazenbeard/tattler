@@ -2,14 +2,5 @@
   "defaults": {
     "run-as": "package"
   },
-  "username": "Tattler",
-  "tool": [
-    {
-      "relpath": "bin/tattler-procmap",
-      "user": "package",
-      "group": "package",
-      "capabilities": "cap_sys_ptrace",
-      "permission": "0700"
-    }
-  ]
+  "username": "Tattler"
 }

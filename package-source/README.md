@@ -5,13 +5,15 @@ This directory contains two adapters for the same DSM package catalog contract:
 - `api/catalog.js`: Vercel-compatible adapter.
 - `supabase/index.ts`: Supabase Edge Function adapter.
 
-The Vercel connector currently lacks project-creation permission, so the Supabase adapter is the active deployment candidate.
+The Vercel connector lacks project-creation permission, so the Supabase adapter is the active deployment.
 
 ## Current immutable release
 
 The catalog is pinned to Git commit:
 
 `7d3c1561b8d6f64133641121c7cc451771bf4d33`
+
+**Compatibility note:** this currently published v0006 release is discoverable by DSM but was rejected before installation because DSM classified its `cap_sys_ptrace` helper as root-privileged. It is retained as publication evidence only while the package-user-only v0007 replacement is being qualified.
 
 That commit contains:
 
@@ -23,7 +25,9 @@ The SPK SHA-256 is:
 
 `fdb3bf8b4d358cca397b4688d3e25ce01d1ef8df43f3a7d4d5a965eb4c1ee22c`
 
-The Supabase function fetches only the pinned release manifest and serves catalog links back to immutable raw GitHub URLs under the same commit.
+The Supabase function fetches only the pinned release manifest and serves catalog links back to immutable raw GitHub URLs under the same commit. Deployment readback on 2026-10-04 confirmed both DSM-style GET and POST catalog requests return Tattler 0.1.0-0006, and the DS216 itself can reach the feed and download the complete 3,164,160-byte SPK body.
+
+Live package-source endpoint: `https://fawkirqroyniueeqspif.supabase.co/functions/v1/tattler-package-source`
 
 ## DSM contract
 

@@ -22,6 +22,7 @@ type Connection struct {
 	Direction string         `json:"direction,omitempty"`
 	Inode     uint64         `json:"inode,omitempty"`
 	UID       uint32         `json:"uid,omitempty"`
+	Owner     string         `json:"owner,omitempty"`
 	Process   ProcessInfo    `json:"process,omitempty"`
 }
 

@@ -19,7 +19,6 @@ REQUIRED_OUTER = {
 
 EXPECTED_INNER_MODES = {
     "bin/tattler": 0o755,
-    "bin/tattler-procmap": 0o700,
 }
 
 def safe_members(tf: tarfile.TarFile) -> list[tarfile.TarInfo]:
@@ -56,27 +55,12 @@ def verify_arm(binary: bytes, label: str) -> int:
 
 def verify_privilege(raw: bytes) -> None:
     privilege = json.loads(raw)
-    defaults = privilege.get("defaults", {})
-    if defaults != {"run-as": "package"}:
-        raise ValueError(f"package defaults must be exactly run-as package: {defaults!r}")
-    if privilege.get("username") != "Tattler":
-        raise ValueError("package username must be Tattler")
-    if privilege.get("ctrl-script"):
-        raise ValueError("root/control-script privilege overrides are forbidden")
-
-    tools = privilege.get("tool", [])
-    if len(tools) != 1:
-        raise ValueError("exactly one capability-bearing helper is required")
-    tool = tools[0]
     expected = {
-        "relpath": "bin/tattler-procmap",
-        "user": "package",
-        "group": "package",
-        "capabilities": "cap_sys_ptrace",
-        "permission": "0700",
+        "defaults": {"run-as": "package"},
+        "username": "Tattler",
     }
-    if tool != expected:
-        raise ValueError(f"unexpected helper privilege declaration: {tool!r}")
+    if privilege != expected:
+        raise ValueError(f"privilege must be exactly package-user only: {privilege!r}")
 
 def parse_info(raw: bytes) -> dict[str, str]:
     result: dict[str, str] = {}
@@ -99,7 +83,7 @@ def parse_info(raw: bytes) -> dict[str, str]:
 def verify_info(info: dict[str, str], package: bytes, payload_bytes: int) -> None:
     required = {
         "package": "Tattler",
-        "version": "0.1.0-0006",
+        "version": "0.1.0-0007",
         "arch": "armada38x",
         "os_min_ver": "7.2-72806",
         "silent_upgrade": "yes",
@@ -157,18 +141,15 @@ def verify(path: Path) -> dict[str, int | str]:
             if actual_mode != mode:
                 raise ValueError(f"{name} mode must be {oct(mode)}, got {oct(actual_mode)}")
         main_binary = inner.extractfile("bin/tattler").read()
-        helper_binary = inner.extractfile("bin/tattler-procmap").read()
 
-    verify_info(info, package, len(main_binary) + len(helper_binary))
+    verify_info(info, package, len(main_binary))
     main_machine = verify_arm(main_binary, "tattler")
-    helper_machine = verify_arm(helper_binary, "tattler-procmap")
     return {
         "outer_members": len(outer_members),
         "payload_members": len(inner_members),
         "arm_e_machine": main_machine,
-        "helper_e_machine": helper_machine,
         "package_run_as": "package",
-        "helper_capability": "cap_sys_ptrace",
+        "privileged_tools": 0,
     }
 
 def main() -> int:
