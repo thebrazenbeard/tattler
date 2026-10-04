@@ -18,7 +18,7 @@ Synology documents `conf/privilege.tool[].capabilities` for DSM 7.0-40656 and ne
 Reference:
 - https://help.synology.com/developer-guide/privilege/privilege_config.html
 
-Tattler v0005 therefore introduces:
+Tattler v0006 introduces:
 
 `bin/tattler-procmap`
 
@@ -60,7 +60,7 @@ When combined with `silent_upgrade=yes`, Package Center only auto-upgrades from 
 Reference:
 - https://help.synology.com/developer-guide/synology_package/INFO_optional_fields.html
 
-Tattler v0005 declares:
+Tattler v0006 declares:
 
 ```
 silent_upgrade="yes"
@@ -92,15 +92,23 @@ The response binds Package Center to:
 
 `tools/update_package_source.py` derives this metadata from the already-built SPK and copies that exact binary into the package-source release tree. CI re-generates and compares the published source tree so a catalog cannot silently drift from the qualified SPK.
 
+## Independent package verification
+
+The separate `thebrazenbeard/spk-packager` strict DSM 7.2.2 verifier was run against the first v0005 capability-helper SPK. It accepted the privilege/capability model, archive layout, icons, lifecycle, ARM payloads, and metadata shape, but rejected the SPK because `INFO checksum` was absent.
+
+v0005 was therefore superseded before DSM discovery or installation. This was a packaging-contract correction, not a runtime failure.
+
+v0006 generates both `checksum` (MD5 of the exact `package.tgz`) and `extractsize` from the built payload. The corrected v0006 SPK passes both Tattler's verifier and `spk-packager@89085efb9e439dfd05f26ad56d857ef71f2d52b1` with zero errors and zero warnings.
+
 ## Current evidence states
 
 Installed live package: `0.1.0-0003`
 
-Current source candidate: `0.1.0-0005`
+Current source candidate: `0.1.0-0006`
 
-v0005 source/build/package-source work does not become a runtime PASS until:
+v0006 source/build/package-source work does not become a runtime PASS until:
 1. exact-head CI passes;
-2. the exact v0005 package is published by the package source;
+2. the exact v0006 package is published by the package source;
 3. DSM Package Center discovers the update;
 4. DSM installs it without the root-privilege rejection;
 5. helper capability is read back on the NAS;

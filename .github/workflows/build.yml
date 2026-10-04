@@ -46,21 +46,26 @@ jobs:
           python3 tools/verify_spk.py dist/Tattler-a.spk
           python3 tools/verify_spk.py dist/Tattler-b.spk
           cmp dist/Tattler-a.spk dist/Tattler-b.spk
-          mv dist/Tattler-a.spk dist/Tattler-armada38x-0.1.0-0005.spk
+          mv dist/Tattler-a.spk dist/Tattler-armada38x-0.1.0-0006.spk
           rm dist/Tattler-b.spk
+      - name: Independent DSM 7.2.2 package verification
+        run: |
+          git clone -q https://github.com/thebrazenbeard/spk-packager.git /tmp/spk-packager
+          git -C /tmp/spk-packager checkout -q 89085efb9e439dfd05f26ad56d857ef71f2d52b1
+          PYTHONPATH=/tmp/spk-packager/src python -m spk_packager.cli verify dist/Tattler-armada38x-0.1.0-0006.spk --json
       - name: Verify published package source binds exact SPK
         run: |
           tmp="$(mktemp -d)"
           mkdir -p "$tmp/api" "$tmp/public/releases" "$tmp/public/icons"
           cp package-source/api/catalog.js "$tmp/api/catalog.js"
           cp package-source/package.json package-source/test.js package-source/vercel.json "$tmp/"
-          python3 tools/update_package_source.py --spk dist/Tattler-armada38x-0.1.0-0005.spk --output "$tmp" --icons-dir spk
+          python3 tools/update_package_source.py --spk dist/Tattler-armada38x-0.1.0-0006.spk --output "$tmp" --icons-dir spk
           cmp package-source/release.json "$tmp/release.json"
           cmp package-source/public/icons/PACKAGE_ICON.PNG "$tmp/public/icons/PACKAGE_ICON.PNG"
           cmp package-source/public/icons/PACKAGE_ICON_256.PNG "$tmp/public/icons/PACKAGE_ICON_256.PNG"
-          cmp package-source/public/releases/Tattler-armada38x-0.1.0-0005.spk "$tmp/public/releases/Tattler-armada38x-0.1.0-0005.spk"
+          cmp package-source/public/releases/Tattler-armada38x-0.1.0-0006.spk "$tmp/public/releases/Tattler-armada38x-0.1.0-0006.spk"
           (cd "$tmp" && node test.js)
       - uses: actions/upload-artifact@v4
         with:
           name: tattler-armada38x-spk
-          path: dist/Tattler-armada38x-0.1.0-0005.spk
+          path: dist/Tattler-armada38x-0.1.0-0006.spk

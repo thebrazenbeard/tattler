@@ -1,5 +1,5 @@
 package="Tattler"
-version="0.1.0-0005"
+version="0.1.0-0006"
 os_min_ver="7.2-72806"
 description="Low-overhead host diagnostics and passive connection observability for Synology DSM."
 displayname="Tattler"

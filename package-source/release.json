@@ -1,10 +1,10 @@
 {
   "arch": "armada38x",
-  "filename": "Tattler-armada38x-0.1.0-0005.spk",
-  "md5": "2753a6ae781bc3834776294f6bea8143",
+  "filename": "Tattler-armada38x-0.1.0-0006.spk",
+  "md5": "b35586d4826fe586f84503c928331f2c",
   "min_build": 72806,
   "package": "Tattler",
-  "sha256": "de78508d584d687de052102b9ac1c01d1344cedb5456466be592f8e04664e50b",
+  "sha256": "22e5647555978af4b4b17a37184b4423d7ea8b2db9198beb1b33d68e787796f6",
   "size": 3164160,
-  "version": "0.1.0-0005"
+  "version": "0.1.0-0006"
 }

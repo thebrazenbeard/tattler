@@ -29,7 +29,7 @@ The loopback-only dashboard/API exposes:
 
 The DSM package itself remains `run-as: package`; Tattler does not request root lifecycle actions.
 
-DSM 7 documents file capabilities for individual package tools. Tattler v0005 therefore moves cross-user socket-to-process attribution into a tiny sibling executable, `bin/tattler-procmap`, and requests only `cap_sys_ptrace` for that helper. The HTTP/API daemon itself receives no capability.
+DSM 7 documents file capabilities for individual package tools. Tattler v0006 moves cross-user socket-to-process attribution into a tiny sibling executable, `bin/tattler-procmap`, and requests only `cap_sys_ptrace` for that helper. The HTTP/API daemon itself receives no capability.
 
 The daemon first resolves process ownership normally. It invokes the helper only for still-unresolved socket inodes, then caches successful mappings. This keeps the elevated surface small and avoids repeatedly scanning all processes when existing mappings are already known.
 
@@ -77,9 +77,9 @@ CGO_ENABLED=0 GOOS=linux GOARCH=arm GOARM=7 \
 python tools/build_spk.py \
   --binary dist/tattler-linux-armv7 \
   --helper dist/tattler-procmap-linux-armv7 \
-  --output dist/Tattler-armada38x-0.1.0-0005.spk
+  --output dist/Tattler-armada38x-0.1.0-0006.spk
 
-python tools/verify_spk.py dist/Tattler-armada38x-0.1.0-0005.spk
+python tools/verify_spk.py dist/Tattler-armada38x-0.1.0-0006.spk
 ```
 
 ## Status
@@ -88,7 +88,7 @@ Installed `0.1.0-0003` on DS216 / DSM 7.2.2:
 
 `PACKAGE_CENTER_UPGRADE_PASS / LIVE_DAEMON_PASS / LOOPBACK_API_PASS / SYSTEM_TELEMETRY_PASS / CONNECTION_ENDPOINT_VISIBILITY_PASS / CROSS_USER_PROCESS_ATTRIBUTION_LIMITED`
 
-Current source subject `0.1.0-0005`:
+Current source subject `0.1.0-0006`:
 
 `UNPRIVILEGED_DESIGN_IMPLEMENTED / CAPABILITY_HELPER_SOURCE_IMPLEMENTED / NATIVE_UPGRADE_METADATA_IMPLEMENTED / PACKAGE_SOURCE_IMPLEMENTED / CI_PENDING / NOT INSTALLED / CAPABILITY_NOT_RUNTIME_QUALIFIED`
 

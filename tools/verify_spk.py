@@ -2,8 +2,10 @@
 from __future__ import annotations
 
 import argparse
+import hashlib
 import io
 import json
+import re
 import struct
 import tarfile
 from pathlib import Path
@@ -76,20 +78,54 @@ def verify_privilege(raw: bytes) -> None:
     if tool != expected:
         raise ValueError(f"unexpected helper privilege declaration: {tool!r}")
 
-def verify_info(raw: bytes) -> None:
-    text = raw.decode("utf-8")
+def parse_info(raw: bytes) -> dict[str, str]:
+    result: dict[str, str] = {}
+    for lineno, line in enumerate(raw.decode("utf-8").splitlines(), 1):
+        line = line.strip()
+        if not line or line.startswith("#"):
+            continue
+        if "=" not in line:
+            raise ValueError(f"INFO line {lineno} is not key=value")
+        key, value = line.split("=", 1)
+        key = key.strip()
+        value = value.strip()
+        if len(value) >= 2 and value[0] == value[-1] == '"':
+            value = value[1:-1]
+        if key in result:
+            raise ValueError(f"duplicate INFO field {key!r}")
+        result[key] = value
+    return result
+
+def verify_info(info: dict[str, str], package: bytes, payload_bytes: int) -> None:
     required = {
-        'package="Tattler"',
-        'version="0.1.0-0005"',
-        'arch="armada38x"',
-        'os_min_ver="7.2-72806"',
-        'silent_upgrade="yes"',
-        'auto_upgrade_from="0.1.0-0003"',
+        "package": "Tattler",
+        "version": "0.1.0-0006",
+        "arch": "armada38x",
+        "os_min_ver": "7.2-72806",
+        "silent_upgrade": "yes",
+        "auto_upgrade_from": "0.1.0-0003",
     }
-    lines = set(text.splitlines())
-    missing = sorted(required - lines)
-    if missing:
-        raise ValueError(f"required INFO fields missing: {missing}")
+    for key, expected in required.items():
+        actual = info.get(key)
+        if actual != expected:
+            raise ValueError(f"INFO {key} must be {expected!r}, got {actual!r}")
+
+    checksum = info.get("checksum", "")
+    if not re.fullmatch(r"[0-9a-f]{32}", checksum):
+        raise ValueError("INFO checksum must be lowercase MD5 hex")
+    actual_checksum = hashlib.md5(package, usedforsecurity=False).hexdigest()
+    if checksum != actual_checksum:
+        raise ValueError(f"INFO checksum mismatch: declared {checksum}, actual {actual_checksum}")
+
+    expected_extractsize = (payload_bytes + 1023) // 1024
+    try:
+        extractsize = int(info.get("extractsize", ""))
+    except ValueError as exc:
+        raise ValueError("INFO extractsize must be an integer") from exc
+    if extractsize != expected_extractsize:
+        raise ValueError(
+            f"INFO extractsize mismatch: declared {extractsize}, expected {expected_extractsize}"
+        )
 
 def verify(path: Path) -> dict[str, int | str]:
     with tarfile.open(path, "r:") as outer:
@@ -107,7 +143,7 @@ def verify(path: Path) -> dict[str, int | str]:
     verify_png(icon_64, 64, 64, "PACKAGE_ICON.PNG")
     verify_png(icon_256, 256, 256, "PACKAGE_ICON_256.PNG")
     verify_privilege(privilege_raw)
-    verify_info(info_raw)
+    info = parse_info(info_raw)
 
     with tarfile.open(fileobj=io.BytesIO(package), mode="r:gz") as inner:
         inner_members = safe_members(inner)
@@ -123,6 +159,7 @@ def verify(path: Path) -> dict[str, int | str]:
         main_binary = inner.extractfile("bin/tattler").read()
         helper_binary = inner.extractfile("bin/tattler-procmap").read()
 
+    verify_info(info, package, len(main_binary) + len(helper_binary))
     main_machine = verify_arm(main_binary, "tattler")
     helper_machine = verify_arm(helper_binary, "tattler-procmap")
     return {
