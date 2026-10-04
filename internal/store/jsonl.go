@@ -3,6 +3,7 @@ package store
 import (
 	"bufio"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -96,6 +97,75 @@ func (s *JSONL) rotate() error {
 		_ = os.Remove(s.path)
 	}
 	return s.open()
+}
+
+func ReadRecent(dir string, keep, limit int) ([]model.Event, error) {
+	if limit <= 0 {
+		return nil, nil
+	}
+	if keep < 0 {
+		keep = 0
+	}
+
+	base := filepath.Join(dir, "events.jsonl")
+	ring := make([]model.Event, limit)
+	count, next := 0, 0
+	var errs []error
+
+	add := func(ev model.Event) {
+		ring[next] = ev
+		next = (next + 1) % limit
+		if count < limit {
+			count++
+		}
+	}
+	read := func(path string) {
+		f, err := os.Open(path)
+		if err != nil {
+			if !errors.Is(err, os.ErrNotExist) {
+				errs = append(errs, fmt.Errorf("read %s: %w", filepath.Base(path), err))
+			}
+			return
+		}
+		defer f.Close()
+
+		scanner := bufio.NewScanner(f)
+		scanner.Buffer(make([]byte, 64*1024), 1024*1024)
+		line := 0
+		for scanner.Scan() {
+			line++
+			if len(scanner.Bytes()) == 0 {
+				continue
+			}
+			var ev model.Event
+			if err := json.Unmarshal(scanner.Bytes(), &ev); err != nil {
+				errs = append(errs, fmt.Errorf("read %s line %d: %w", filepath.Base(path), line, err))
+				continue
+			}
+			add(ev)
+		}
+		if err := scanner.Err(); err != nil {
+			errs = append(errs, fmt.Errorf("scan %s: %w", filepath.Base(path), err))
+		}
+	}
+
+	for i := keep; i >= 1; i-- {
+		read(fmt.Sprintf("%s.%d", base, i))
+	}
+	read(base)
+
+	if count == 0 {
+		return nil, errors.Join(errs...)
+	}
+	out := make([]model.Event, count)
+	start := 0
+	if count == limit {
+		start = next
+	}
+	for i := 0; i < count; i++ {
+		out[i] = ring[(start+i)%limit]
+	}
+	return out, errors.Join(errs...)
 }
 
 func (s *JSONL) Close() error {

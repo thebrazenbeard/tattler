@@ -68,8 +68,7 @@ func main() {
 
 	local := localAddresses()
 	tr := tracker.New()
-	uiState := server.NewState(5000)
-	uiState.SetSource("proc-sampler")
+	uiState := newUIState(statePath, *keepLogs)
 	sysSampler := metrics.NewSampler(*procRoot)
 	if sample, sampleErr := sysSampler.Sample(time.Now().UTC()); sampleErr != nil {
 		log.Printf("initial system sample warning: %v", sampleErr)
@@ -139,6 +138,19 @@ func main() {
 			uiState.AddSystem(systemSample, metrics.Diagnose(systemSample))
 		}
 	}
+}
+
+const recentEventLimit = 5000
+
+func newUIState(statePath string, keepLogs int) *server.State {
+	state := server.NewState(recentEventLimit)
+	state.SetSource("proc-sampler")
+	events, err := store.ReadRecent(statePath, keepLogs, recentEventLimit)
+	if err != nil {
+		log.Printf("journal restore warning: %v", err)
+	}
+	state.Add(events...)
+	return state
 }
 
 func decorate(snap procnet.Snapshot, procRoot string, owners map[uint32]string, local map[netip.Addr]struct{}, cache map[uint64]model.ProcessInfo) []model.Connection {

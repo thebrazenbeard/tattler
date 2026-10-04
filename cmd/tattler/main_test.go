@@ -1,12 +1,51 @@
 package main
 
 import (
+	"encoding/json"
+	"net/http/httptest"
 	"net/netip"
 	"testing"
+	"time"
 
 	"github.com/thebrazenbeard/tattler/internal/model"
 	"github.com/thebrazenbeard/tattler/internal/procnet"
+	"github.com/thebrazenbeard/tattler/internal/server"
+	"github.com/thebrazenbeard/tattler/internal/store"
 )
+
+func TestNewUIStateRestoresPersistedEvents(t *testing.T) {
+	dir := t.TempDir()
+	journal, err := store.Open(dir, 0, 4)
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := model.Event{
+		SchemaVersion: 1,
+		ID:            "persisted-event",
+		Time:          time.Date(2026, 10, 4, 22, 0, 0, 0, time.UTC),
+		Kind:          "open",
+		Source:        "test",
+	}
+	if err := journal.Append([]model.Event{want}); err != nil {
+		t.Fatal(err)
+	}
+	if err := journal.Close(); err != nil {
+		t.Fatal(err)
+	}
+
+	state := newUIState(dir, 4)
+	rec := httptest.NewRecorder()
+	req := httptest.NewRequest("GET", "/api/v1/events", nil)
+	(&server.Server{State: state}).Handler().ServeHTTP(rec, req)
+
+	var got []model.Event
+	if err := json.Unmarshal(rec.Body.Bytes(), &got); err != nil {
+		t.Fatal(err)
+	}
+	if len(got) != 1 || got[0].ID != want.ID {
+		t.Fatalf("events=%+v want persisted event %q", got, want.ID)
+	}
+}
 
 func TestDecorateAddsOwnerWithoutInventingProcess(t *testing.T) {
 	conn := model.Connection{
