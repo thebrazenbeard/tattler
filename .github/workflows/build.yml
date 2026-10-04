@@ -61,5 +61,6 @@ jobs:
           cmp package-source/release.json "$tmp/release.json"
           cmp package-source/public/icons/PACKAGE_ICON.PNG "$tmp/public/icons/PACKAGE_ICON.PNG"
           cmp package-source/public/icons/PACKAGE_ICON_256.PNG "$tmp/public/icons/PACKAGE_ICON_256.PNG"
-          cmp package-source/public/releases/Tattler-armada38x-0.1.0-0007.spk "$tmp/public/releases/Tattler-armada38x-0.1.0-0007.spk"
+          release_file="$(python3 -c 'import json; print(json.load(open("package-source/release.json"))["filename"])')"
+          cmp "package-source/public/releases/$release_file" "$tmp/public/releases/$release_file"
           (cd "$tmp" && node test.js)
