@@ -112,29 +112,25 @@ v0007 must pass both Tattler's verifier and the independent strict DSM 7.2.2 ver
 
 ## Current evidence states
 
-Installed live package: `0.1.0-0003`
-
 Rejected candidate `0.1.0-0006`:
 
 `BUILD_PASS / PACKAGE_SOURCE_DISCOVERY_PASS / DSM_INSTALL_REJECTED_ROOT_PRIVILEGE_CLASSIFICATION / NEVER_INSTALLED`
 
-Current source candidate `0.1.0-0007`:
+Current live subject `0.1.0-0007`:
 
-`PACKAGE_USER_ONLY / UID_OWNER_ATTRIBUTION_IMPLEMENTED / EXACT_HEAD_CI_PASS / PUBLISHED / LIVE_FEED_PASS / NOT INSTALLED`
+`PACKAGE_USER_ONLY / UID_OWNER_ATTRIBUTION_IMPLEMENTED / EXACT_HEAD_CI_PASS / PUBLISHED / LIVE_FEED_PASS / PACKAGE_CENTER_UPGRADE_PASS / LIVE_DAEMON_PASS / UID_OWNER_ATTRIBUTION_RUNTIME_PASS`
 
-Publication evidence:
+Publication/runtime evidence:
 - release commit `427db77274bc877b2b7d04c4970210bcda237f9e` passed exact-head CI run #30;
 - feed-pointer commit `4dda8de50e07673921b696fff11a9fc6774f7961` passed exact-head CI run #32;
-- deployed Supabase Edge Function `tattler-package-source` is version 3 and points only at the immutable v0007 release commit;
-- live GET and POST both return `0.1.0-0007`;
-- returned SPK SHA-256 is `a70428e2d9a0f132e5eb3b12d7c7c3608b12601200c023c51354083ea4b8b736`;
-- DS216 itself can reach the v0007 feed;
-- live v0003 API socket UIDs were resolved through `/etc/passwd` to real accounts including `http` (1023), `tailscale` (165290), and `WorkBridgeRelay` (265891), validating the unprivileged owner-label evidence path.
+- current source head `9bd2c543b66e766bf3098b269b8461fd66f9c508` passed exact-head CI run #34;
+- deployed Supabase Edge Function `tattler-package-source` points at the immutable v0007 release;
+- live GET and POST return `0.1.0-0007`;
+- canonical SPK SHA-256 is `a70428e2d9a0f132e5eb3b12d7c7c3608b12601200c023c51354083ea4b8b736`;
+- the DS216 reached the feed and Package Center upgraded from v0003 to v0007 natively;
+- direct readback observed v0007 running as user `Tattler`, PID `8972`, with loopback API responsive;
+- live API connection records resolved socket UIDs to `http`, `tailscale`, `WorkBridgeRelay`, and `root`;
+- exact cross-user `process` attribution remained empty where DSM denied readable FD proof, preserving the intended evidence ceiling;
+- immediate post-upgrade overhead was approximately 8 MiB RSS and 1.4-1.5% CPU.
 
-v0007 becomes a runtime PASS only after:
-1. DSM Package Center refreshes to v0007;
-2. DSM installs it without the root-privilege rejection;
-3. direct readback proves `0.1.0-0007` is running as user `Tattler`;
-4. API records demonstrate `owner` attribution from socket UID;
-5. exact PID attribution remains separately bounded to readable FD evidence;
-6. overhead remains within the DS216 budget.
+The native DSM update path and UID/account owner-attribution path are therefore runtime-qualified on this DS216. Exact cross-user PID attribution remains deliberately LIMITED rather than inferred.

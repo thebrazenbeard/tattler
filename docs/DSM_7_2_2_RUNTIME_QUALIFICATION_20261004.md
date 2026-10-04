@@ -168,3 +168,59 @@ Representative immediate post-upgrade readings included approximately 7 MiB RSS 
 This addendum establishes the v0003 package lifecycle/icon upgrade and daemon restart. It does not change the v0002 ten-minute overhead dataset's exact subject; those measurements remain bound to v0002's identical daemon binary.
 
 The two DSM icon assets are part of the v0003 SPK archive. Their absence under `/var/packages/Tattler/target/..` after installation is not evidence that Package Center rejected them; DSM consumes package metadata/assets during installation rather than preserving the original outer SPK layout there.
+
+
+## v0007 native-update/runtime addendum
+
+DSM Package Center discovered and upgraded Tattler through the registered native package source to `0.1.0-0007`.
+
+Exact source/runtime subject:
+- source head observed before runtime qualification: `9bd2c543b66e766bf3098b269b8461fd66f9c508`
+- exact-head GitHub Actions run #34: PASS
+- canonical v0007 SPK SHA-256: `a70428e2d9a0f132e5eb3b12d7c7c3608b12601200c023c51354083ea4b8b736`
+
+Direct SSH readback after installation showed:
+- `package="Tattler"`
+- `version="0.1.0-0007"`
+- `arch="armada38x"`
+- daemon PID `8972`
+- daemon user `Tattler`
+- command line:
+  `/volume1/@appstore/Tattler/bin/tattler --listen 127.0.0.1:9147 --state-dir /volume1/@appdata/Tattler/state --poll 1s --metrics-interval 5s`
+- immediate daemon RSS approximately 8 MiB
+- immediate daemon CPU approximately 1.4-1.5%
+- loopback `/api/v1/status` responsive
+
+A first poll immediately after Package Center reported the new INFO version observed no running process/API yet. Package lifecycle logs then showed DSM's v0007 `start-stop-status start` returning success, and subsequent direct readback observed the live PID/API. The early gap is therefore treated as upgrade/start transition timing, not a persistent crash.
+
+### v0007 owner-attribution behavior
+
+Live `/api/v1/current` records demonstrated the intended unprivileged UID/account mapping:
+- UID 1023 -> `owner: "http"` for DSM web connections;
+- UID 265891 -> `owner: "WorkBridgeRelay"`;
+- UID 165290 -> `owner: "tailscale"`;
+- root-owned sockets reported `owner: "root"`.
+
+For these cross-user sockets the `process` object remained empty where Tattler could not prove the owning PID through readable `/proc/<pid>/fd` links.
+
+This is the intended evidence model:
+- exact PID/name/executable attribution: only when directly proven from readable FD links;
+- account-owner attribution: kernel socket UID mapped through `/etc/passwd`;
+- no PID is inferred from UID ownership.
+
+### v0007 qualification result
+
+Exact subject `Tattler 0.1.0-0007`:
+- native Package Source discovery: PASS
+- Package Center upgrade: PASS
+- unsigned package privilege compatibility: PASS
+- package-user execution: PASS
+- live daemon: PASS
+- loopback API: PASS
+- system telemetry: PASS
+- connection endpoint/direction visibility: PASS
+- UID/account owner attribution: PASS
+- exact cross-user PID attribution: LIMITED by DSM `/proc` permissions
+- immediate resource overhead: PASS (approximately 8 MiB RSS, 1.4-1.5% CPU in the observed readback)
+
+The prior v0002 ten-minute overhead dataset remains the stronger long-duration overhead measurement. The v0007 values above are an immediate post-upgrade readback, not a replacement ten-minute dataset.
