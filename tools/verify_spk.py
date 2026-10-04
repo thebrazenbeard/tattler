@@ -83,7 +83,6 @@ def parse_info(raw: bytes) -> dict[str, str]:
 def verify_info(info: dict[str, str], package: bytes, payload_bytes: int) -> None:
     required = {
         "package": "Tattler",
-        "version": "0.1.0-0007",
         "arch": "armada38x",
         "os_min_ver": "7.2-72806",
         "silent_upgrade": "yes",
@@ -93,6 +92,10 @@ def verify_info(info: dict[str, str], package: bytes, payload_bytes: int) -> Non
         actual = info.get(key)
         if actual != expected:
             raise ValueError(f"INFO {key} must be {expected!r}, got {actual!r}")
+
+    version = info.get("version", "")
+    if not re.fullmatch(r"\d+\.\d+\.\d+-\d{4}", version):
+        raise ValueError(f"INFO version has invalid format: {version!r}")
 
     checksum = info.get("checksum", "")
     if not re.fullmatch(r"[0-9a-f]{32}", checksum):
@@ -150,6 +153,7 @@ def verify(path: Path) -> dict[str, int | str]:
         "arm_e_machine": main_machine,
         "package_run_as": "package",
         "privileged_tools": 0,
+        "version": info["version"],
     }
 
 def main() -> int:

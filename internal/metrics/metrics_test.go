@@ -68,6 +68,41 @@ func TestSamplerAndDiagnose(t *testing.T) {
 	}
 }
 
+func TestPhysicalDiskLatencyUtilizationAndQueue(t *testing.T) {
+	root := t.TempDir()
+	writeFixture(t, root, 100, 200, 10, 20, 100, 1000, 2000, 20, 10)
+	mustWrite(t, filepath.Join(root, "diskstats"), "8 0 sda 10 0 100 1000 20 0 200 2000 0 3000 4000\n")
+
+	s := NewSampler(root)
+	t0 := time.Date(2026, 10, 4, 12, 0, 0, 0, time.UTC)
+	if _, err := s.Sample(t0); err != nil {
+		t.Fatal(err)
+	}
+
+	writeFixture(t, root, 120, 260, 50, 40, 300, 5000, 8000, 30, 20)
+	mustWrite(t, filepath.Join(root, "diskstats"), "8 0 sda 12 0 120 1600 26 0 260 2600 0 6500 10000\n")
+	second, err := s.Sample(t0.Add(5 * time.Second))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(second.PhysicalDisks) != 1 {
+		t.Fatalf("physical disks=%+v", second.PhysicalDisks)
+	}
+	d := second.PhysicalDisks[0]
+	if d.Name != "sda" || d.ReadIOPS != 0.4 || d.WriteIOPS != 1.2 {
+		t.Fatalf("disk identity/iops=%+v", d)
+	}
+	if d.AwaitMS < 149.9 || d.AwaitMS > 150.1 {
+		t.Fatalf("await_ms=%f", d.AwaitMS)
+	}
+	if d.UtilizationPercent < 69.9 || d.UtilizationPercent > 70.1 {
+		t.Fatalf("utilization_percent=%f", d.UtilizationPercent)
+	}
+	if d.AvgQueueDepth < 1.19 || d.AvgQueueDepth > 1.21 {
+		t.Fatalf("avg_queue_depth=%f", d.AvgQueueDepth)
+	}
+}
+
 func writeFixture(t *testing.T, root string, readSectors, writeSectors, swapIn, swapOut, majorFault, readBytes, writeBytes, procUser, procSystem uint64) {
 	t.Helper()
 	mustWrite(t, filepath.Join(root, "loadavg"), "4.00 2.00 1.00 3/100 12345\n")

@@ -60,6 +60,20 @@ Tattler v0007 uses that evidence directly:
 
 For DSM package services this is often still useful: a connection can be attributed to an account such as `PlexMediaServer` without falsely claiming which Plex worker owns the socket.
 
+## V0.2 storage-evidence source candidate
+
+Source candidate `0.2.0-0001` adds per-physical-disk evidence from Linux `/proc/diskstats` without adding privileges or hot-path SMART polling:
+
+- per-device read/write throughput and IOPS;
+- average I/O completion latency (`await_ms`);
+- device busy time as `utilization_percent`;
+- weighted average queue depth;
+- richer `storage-wait` evidence naming the hottest observed physical disk.
+
+These fields are derived from counter deltas over the existing five-second system-sampling interval. They are evidence about observed block-device pressure, not proof of disk failure.
+
+`0.2.0-0001` is currently **SOURCE/BUILD/PACKAGE VERIFIED ONLY**. The live DS216 remains on runtime-qualified `0.1.0-0007` until a separate install/upgrade is explicitly authorized and read back.
+
 ## Native DSM updates
 
 Tattler uses DSM's native Package Center upgrade path instead of a root self-updater.
@@ -95,9 +109,9 @@ CGO_ENABLED=0 GOOS=linux GOARCH=arm GOARM=7 \
 
 python tools/build_spk.py \
   --binary dist/tattler-linux-armv7 \
-  --output dist/Tattler-armada38x-0.1.0-0007.spk
+  --output dist/Tattler.spk
 
-python tools/verify_spk.py dist/Tattler-armada38x-0.1.0-0007.spk
+python tools/verify_spk.py dist/Tattler.spk
 ```
 
 CI also runs the independent strict DSM 7.2.2 verifier from `thebrazenbeard/spk-packager@89085efb9e439dfd05f26ad56d857ef71f2d52b1`.
@@ -112,9 +126,13 @@ v0006:
 
 `SOURCE_BUILD_PASS / PACKAGE_SOURCE_DISCOVERY_PASS / DSM_INSTALL_REJECTED_ROOT_PRIVILEGE_CLASSIFICATION / NEVER_INSTALLED`
 
-Current source/runtime subject `0.1.0-0007`:
+Current live runtime subject `0.1.0-0007`:
 
-`PACKAGE_USER_ONLY / UID_OWNER_ATTRIBUTION_IMPLEMENTED / EXACT_HEAD_CI_PASS / PACKAGE_SOURCE_LIVE / NATIVE_PACKAGE_CENTER_UPGRADE_PASS / LIVE_DAEMON_PASS / LOOPBACK_API_PASS / UID_OWNER_ATTRIBUTION_RUNTIME_PASS`
+`PACKAGE_USER_ONLY / UID_OWNER_ATTRIBUTION_IMPLEMENTED / PACKAGE_SOURCE_LIVE / NATIVE_PACKAGE_CENTER_UPGRADE_PASS / LIVE_DAEMON_PASS / LOOPBACK_API_PASS / UID_OWNER_ATTRIBUTION_RUNTIME_PASS`
+
+Current source/package candidate `0.2.0-0001`:
+
+`DISK_PRESSURE_EVIDENCE_IMPLEMENTED / LOCAL_TEST_VET_PASS / DETERMINISTIC_ARMV7_BUILD_PASS / DETERMINISTIC_SPK_PASS / INDEPENDENT_DSM_7_2_2_VERIFY_PASS / NOT_PUBLISHED / NOT_INSTALLED / RUNTIME_NOT_QUALIFIED`
 
 Direct DSM readback after the native upgrade observed:
 - installed version `0.1.0-0007`, architecture `armada38x`;

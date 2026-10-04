@@ -23,7 +23,9 @@ Qualification gates before calling the SPK runtime-ready:
 
 ## V0.2 — storage and DSM evidence
 
-Add optional low-frequency disk/RAID/volume/SMART evidence with explicit source labels and no assumption that every disk exposes the same interface. Add latency/queue evidence where available. Keep expensive SMART polling far outside the hot path.
+Source candidate `0.2.0-0001` implements the first storage-evidence slice from already-readable `/proc/diskstats`: per-physical-disk throughput, IOPS, average completion latency, utilization, and weighted queue depth. Existing `storage-wait` findings now carry the hottest disk's measured utilization/latency/queue evidence when available.
+
+Still pending runtime qualification and later V0.2 work: DSM/md RAID state, device/volume identity, optional low-frequency SMART evidence, and any additional source-specific collectors. Keep expensive SMART polling far outside the hot path.
 
 ## V0.3 — durable diagnostic history
 
