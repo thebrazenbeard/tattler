@@ -21,6 +21,17 @@ type ProcessSample struct {
 	WriteBPS   float64 `json:"write_bytes_per_sec"`
 }
 
+type DiskSample struct {
+	Name          string  `json:"name"`
+	Source        string  `json:"source"`
+	ReadBPS       float64 `json:"read_bytes_per_sec"`
+	WriteBPS      float64 `json:"write_bytes_per_sec"`
+	BusyPercent   float64 `json:"busy_percent"`
+	AvgQueueDepth float64 `json:"avg_queue_depth"`
+	AvgAwaitMS    float64 `json:"avg_await_ms"`
+	IOInProgress  uint64  `json:"io_in_progress"`
+}
+
 type Sample struct {
 	SchemaVersion      int             `json:"schema_version"`
 	ObservedAt         time.Time       `json:"observed_at"`
@@ -39,6 +50,7 @@ type Sample struct {
 	MajorFaultsPerSec  float64         `json:"major_faults_per_sec"`
 	DiskReadBPS        float64         `json:"disk_read_bytes_per_sec"`
 	DiskWriteBPS       float64         `json:"disk_write_bytes_per_sec"`
+	Disks              []DiskSample    `json:"disks,omitempty"`
 	ProcessesRunning   int             `json:"processes_running"`
 	TopProcesses       []ProcessSample `json:"top_processes,omitempty"`
 }
@@ -58,9 +70,20 @@ type cpuCounters struct {
 	cores  int
 }
 
-type diskCounters struct {
+type diskDeviceCounters struct {
+	readIOs      uint64
 	readSectors  uint64
+	readMS       uint64
+	writeIOs     uint64
 	writeSectors uint64
+	writeMS      uint64
+	ioInProgress uint64
+	ioMS         uint64
+	weightedIOMS uint64
+}
+
+type diskCounters struct {
+	devices map[string]diskDeviceCounters
 }
 
 type vmCounters struct {
@@ -136,12 +159,11 @@ func (s *Sampler) Sample(now time.Time) (Sample, error) {
 	if !s.prevAt.IsZero() {
 		elapsed = now.Sub(s.prevAt).Seconds()
 	}
+	out.Disks = diskSamples(disk.devices, s.prevDisk.devices, elapsed)
 	if elapsed > 0 {
-		if disk.readSectors >= s.prevDisk.readSectors {
-			out.DiskReadBPS = float64(disk.readSectors-s.prevDisk.readSectors) * 512 / elapsed
-		}
-		if disk.writeSectors >= s.prevDisk.writeSectors {
-			out.DiskWriteBPS = float64(disk.writeSectors-s.prevDisk.writeSectors) * 512 / elapsed
+		for _, device := range out.Disks {
+			out.DiskReadBPS += device.ReadBPS
+			out.DiskWriteBPS += device.WriteBPS
 		}
 		if vm.swapIn >= s.prevVM.swapIn {
 			out.SwapInPagesPerSec = float64(vm.swapIn-s.prevVM.swapIn) / elapsed
@@ -253,19 +275,71 @@ func readDisk(path string) (diskCounters, error) {
 		return diskCounters{}, err
 	}
 	defer f.Close()
-	var out diskCounters
+	out := diskCounters{devices: make(map[string]diskDeviceCounters)}
 	sc := bufio.NewScanner(f)
 	for sc.Scan() {
 		fields := strings.Fields(sc.Text())
 		if len(fields) < 10 || !physicalDisk(fields[2]) {
 			continue
 		}
-		read, _ := strconv.ParseUint(fields[5], 10, 64)
-		write, _ := strconv.ParseUint(fields[9], 10, 64)
-		out.readSectors += read
-		out.writeSectors += write
+		readSectors, _ := strconv.ParseUint(fields[5], 10, 64)
+		writeSectors, _ := strconv.ParseUint(fields[9], 10, 64)
+		device := diskDeviceCounters{readSectors: readSectors, writeSectors: writeSectors}
+		if len(fields) >= 14 {
+			device.readIOs, _ = strconv.ParseUint(fields[3], 10, 64)
+			device.readMS, _ = strconv.ParseUint(fields[6], 10, 64)
+			device.writeIOs, _ = strconv.ParseUint(fields[7], 10, 64)
+			device.writeMS, _ = strconv.ParseUint(fields[10], 10, 64)
+			device.ioInProgress, _ = strconv.ParseUint(fields[11], 10, 64)
+			device.ioMS, _ = strconv.ParseUint(fields[12], 10, 64)
+			device.weightedIOMS, _ = strconv.ParseUint(fields[13], 10, 64)
+		}
+		out.devices[fields[2]] = device
 	}
 	return out, sc.Err()
+}
+
+func diskSamples(current, previous map[string]diskDeviceCounters, elapsed float64) []DiskSample {
+	names := make([]string, 0, len(current))
+	for name := range current {
+		names = append(names, name)
+	}
+	sort.Strings(names)
+
+	out := make([]DiskSample, 0, len(names))
+	for _, name := range names {
+		cur := current[name]
+		sample := DiskSample{Name: name, Source: "proc-diskstats", IOInProgress: cur.ioInProgress}
+		prev, ok := previous[name]
+		if ok && elapsed > 0 {
+			if cur.readSectors >= prev.readSectors {
+				sample.ReadBPS = float64(cur.readSectors-prev.readSectors) * 512 / elapsed
+			}
+			if cur.writeSectors >= prev.writeSectors {
+				sample.WriteBPS = float64(cur.writeSectors-prev.writeSectors) * 512 / elapsed
+			}
+			elapsedMS := elapsed * 1000
+			if cur.ioMS >= prev.ioMS {
+				sample.BusyPercent = float64(cur.ioMS-prev.ioMS) * 100 / elapsedMS
+				if sample.BusyPercent > 100 {
+					sample.BusyPercent = 100
+				}
+			}
+			if cur.weightedIOMS >= prev.weightedIOMS {
+				sample.AvgQueueDepth = float64(cur.weightedIOMS-prev.weightedIOMS) / elapsedMS
+			}
+			if cur.readIOs >= prev.readIOs && cur.writeIOs >= prev.writeIOs &&
+				cur.readMS >= prev.readMS && cur.writeMS >= prev.writeMS {
+				completed := (cur.readIOs - prev.readIOs) + (cur.writeIOs - prev.writeIOs)
+				if completed > 0 {
+					waitMS := (cur.readMS - prev.readMS) + (cur.writeMS - prev.writeMS)
+					sample.AvgAwaitMS = float64(waitMS) / float64(completed)
+				}
+			}
+		}
+		out = append(out, sample)
+	}
+	return out
 }
 
 func physicalDisk(name string) bool {
@@ -450,6 +524,33 @@ func pct(part, total uint64) float64 {
 	return float64(part) * 100 / float64(total)
 }
 
+func storageDiskEvidence(disks []DiskSample) string {
+	active := make([]DiskSample, 0, len(disks))
+	for _, disk := range disks {
+		if disk.BusyPercent > 0 || disk.AvgQueueDepth > 0 || disk.AvgAwaitMS > 0 {
+			active = append(active, disk)
+		}
+	}
+	sort.Slice(active, func(i, j int) bool {
+		if active[i].BusyPercent != active[j].BusyPercent {
+			return active[i].BusyPercent > active[j].BusyPercent
+		}
+		if active[i].AvgQueueDepth != active[j].AvgQueueDepth {
+			return active[i].AvgQueueDepth > active[j].AvgQueueDepth
+		}
+		return active[i].AvgAwaitMS > active[j].AvgAwaitMS
+	})
+	if len(active) > 2 {
+		active = active[:2]
+	}
+	parts := make([]string, 0, len(active))
+	for _, disk := range active {
+		parts = append(parts, fmt.Sprintf("%s busy %.1f%%, avg queue %.2f, avg await %.1f ms (%s)",
+			disk.Name, disk.BusyPercent, disk.AvgQueueDepth, disk.AvgAwaitMS, disk.Source))
+	}
+	return strings.Join(parts, "; ")
+}
+
 func Diagnose(s Sample) []Finding {
 	var out []Finding
 	memPct := 100.0
@@ -465,7 +566,11 @@ func Diagnose(s Sample) []Finding {
 		out = append(out, Finding{Code: "swap-churn", Severity: "warning", ObservedAt: s.ObservedAt, Summary: "The host is actively paging.", Evidence: fmt.Sprintf("swap in %.1f pages/s, swap out %.1f pages/s", s.SwapInPagesPerSec, s.SwapOutPagesPerSec)})
 	}
 	if s.IOWaitPercent >= 20 {
-		out = append(out, Finding{Code: "storage-wait", Severity: "warning", ObservedAt: s.ObservedAt, Summary: "CPU time is being lost waiting on storage.", Evidence: fmt.Sprintf("I/O wait %.1f%%", s.IOWaitPercent)})
+		evidence := fmt.Sprintf("I/O wait %.1f%%", s.IOWaitPercent)
+		if deviceEvidence := storageDiskEvidence(s.Disks); deviceEvidence != "" {
+			evidence += "; " + deviceEvidence
+		}
+		out = append(out, Finding{Code: "storage-wait", Severity: "warning", ObservedAt: s.ObservedAt, Summary: "CPU time is being lost waiting on storage.", Evidence: evidence})
 	}
 	if s.CPUPercent >= 90 && s.CPUCores > 0 && s.Load1 >= float64(s.CPUCores)*0.9 {
 		out = append(out, Finding{Code: "cpu-saturation", Severity: "warning", ObservedAt: s.ObservedAt, Summary: "CPU capacity is saturated.", Evidence: fmt.Sprintf("CPU %.1f%%, load1 %.2f on %d cores", s.CPUPercent, s.Load1, s.CPUCores)})

@@ -23,7 +23,18 @@ Qualification gates before calling the SPK runtime-ready:
 
 ## V0.2 — storage and DSM evidence
 
-Add optional low-frequency disk/RAID/volume/SMART evidence with explicit source labels and no assumption that every disk exposes the same interface. Add latency/queue evidence where available. Keep expensive SMART polling far outside the hot path.
+First source slice implemented:
+
+- retain per-physical-device `/proc/diskstats` throughput, busy percentage, average outstanding-I/O depth, average await, and in-progress I/O;
+- label the source explicitly as `proc-diskstats`;
+- enrich `storage-wait` with up to the two most-loaded observed physical disks without promoting correlation into root-cause proof;
+- reuse the existing five-second diskstats read, adding no new hot-path file polling.
+
+Remaining V0.2 work:
+
+- add low-frequency DSM/md RAID state and device/volume identity where readable;
+- add SMART health only at a much lower cadence and only where safely available;
+- preserve explicit provenance when RAID/device-mapper and physical-disk evidence are correlated.
 
 ## V0.3 — durable diagnostic history
 

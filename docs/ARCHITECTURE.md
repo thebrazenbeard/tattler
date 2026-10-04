@@ -48,6 +48,10 @@ Connection sampling defaults to one second. The more expensive whole-host/proces
 
 The system sampler reads Linux kernel text interfaces rather than depending on a resident metrics stack. V0.1 measures load averages, aggregate CPU utilization, I/O-wait share, memory availability, swap use and churn, major faults, aggregate physical-disk read/write rates, runnable-process count, and a bounded list of resource-heavy processes.
 
+The first V0.2 storage slice retains per-physical-device evidence from the same `/proc/diskstats` read already used for aggregate throughput. For each whole physical disk it exposes read/write throughput, device-busy percentage, average outstanding-I/O depth from the weighted-I/O-time counter, average read/write completion latency (`await`) from completed-I/O and read/write-time deltas, and instantaneous I/Os in progress. Each device record names `proc-diskstats` as its source. Partitions are excluded. The aggregate read/write rates are now the sum of valid per-device deltas, so a reset on one device does not manufacture a negative rate.
+
+A `storage-wait` finding may include up to the two most-loaded observed physical disks as supporting evidence. That is correlation, not root-cause proof: RAID, device-mapper, filesystem, controller, and workload layers can all contribute to the observed wait. DSM/md RAID state, volume identity, and SMART health remain separate evidence sources and are not inferred from diskstats.
+
 Process CPU is derived from per-process tick deltas against aggregate CPU tick deltas. Process I/O uses `/proc/<pid>/io` where readable. Missing process data is treated as missing evidence rather than as zero-cost proof.
 
 The diagnosis layer currently recognizes pressure patterns, not root causes: `memory-pressure`, `memory-critical`, `swap-churn`, `storage-wait`, `cpu-saturation`, `blocked-load`, and `major-faults`. Each finding carries the measurement that triggered it.
