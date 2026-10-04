@@ -52,8 +52,8 @@ CGO_ENABLED=0 GOOS=linux GOARCH=arm GOARM=7 \
   -o dist/tattler-linux-armv7 ./cmd/tattler
 
 python tools/build_spk.py --binary dist/tattler-linux-armv7 \
-  --output dist/Tattler-armada38x-0.1.0-0001.spk
-python tools/verify_spk.py dist/Tattler-armada38x-0.1.0-0001.spk
+  --output dist/Tattler-armada38x-0.1.0-0002.spk
+python tools/verify_spk.py dist/Tattler-armada38x-0.1.0-0002.spk
 ```
 
 Linux runtime:

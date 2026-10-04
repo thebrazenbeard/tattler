@@ -13,30 +13,81 @@ is_running() {
     kill -0 "$pid" 2>/dev/null
 }
 
+report_start_failure() {
+    if [ -n "${SYNOPKG_TEMP_LOGFILE:-}" ]; then
+        {
+            echo "Tattler failed to start."
+            if [ -r "$LOGFILE" ]; then
+                echo
+                echo "Last Tattler log lines:"
+                tail -n 40 "$LOGFILE" 2>/dev/null || true
+            fi
+        } >"$SYNOPKG_TEMP_LOGFILE"
+    fi
+}
+
 case "${1:-}" in
+    prestart)
+        [ -n "${SYNOPKG_PKGDEST:-}" ] || exit 1
+        [ -n "${SYNOPKG_PKGVAR:-}" ] || exit 1
+        [ -x "$BIN" ] || {
+            [ -z "${SYNOPKG_TEMP_LOGFILE:-}" ] || echo "Tattler executable is missing or not executable: $BIN" >"$SYNOPKG_TEMP_LOGFILE"
+            exit 1
+        }
+        exit 0
+        ;;
+    prestop)
+        exit 0
+        ;;
     start)
         if is_running; then exit 0; fi
         umask 077
         mkdir -p "$STATE_DIR"
-        nohup "$BIN" --listen 127.0.0.1:9147 --state-dir "$STATE_DIR" --poll 1s >>"$LOGFILE" 2>&1 &
+        nohup "$BIN" --listen 127.0.0.1:9147 --state-dir "$STATE_DIR" --poll 1s --metrics-interval 5s >>"$LOGFILE" 2>&1 &
         echo "$!" >"$PIDFILE"
         sleep 1
-        is_running
+        if is_running; then
+            exit 0
+        fi
+        rm -f "$PIDFILE"
+        report_start_failure
+        exit 1
         ;;
     stop)
-        if ! is_running; then rm -f "$PIDFILE"; exit 0; fi
+        if ! is_running; then
+            rm -f "$PIDFILE"
+            exit 0
+        fi
         pid="$(cat "$PIDFILE")"
         kill -TERM "$pid" 2>/dev/null || true
         i=0
-        while kill -0 "$pid" 2>/dev/null && [ "$i" -lt 10 ]; do sleep 1; i=$((i+1)); done
-        if kill -0 "$pid" 2>/dev/null; then kill -KILL "$pid" 2>/dev/null || true; fi
+        while kill -0 "$pid" 2>/dev/null && [ "$i" -lt 10 ]; do
+            sleep 1
+            i=$((i+1))
+        done
+        if kill -0 "$pid" 2>/dev/null; then
+            kill -KILL "$pid" 2>/dev/null || true
+        fi
         rm -f "$PIDFILE"
+        exit 0
         ;;
     status)
-        is_running
+        if is_running; then
+            exit 0
+        fi
+        if [ -f "$PIDFILE" ]; then
+            exit 1
+        fi
+        exit 3
+        ;;
+    log)
+        if [ -r "$LOGFILE" ]; then
+            echo "$LOGFILE"
+        fi
+        exit 0
         ;;
     *)
-        echo "usage: $0 {start|stop|status}" >&2
-        exit 2
+        echo "usage: $0 {prestart|prestop|start|stop|status|log}" >&2
+        exit 1
         ;;
 esac
