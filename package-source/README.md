@@ -18,7 +18,7 @@ The source tree now contains the exact CI-qualified v0007 artifact:
 - size: `2,273,280` bytes
 - privilege model: package-user only; no root lifecycle actions and no file capabilities
 
-The live Supabase function remains pinned to the preceding v0006 release until the commit containing this exact v0007 payload passes the publication-binding CI gate. Only then is the live function pointer advanced.
+The source-controlled Supabase function now points at green immutable release commit `427db77274bc877b2b7d04c4970210bcda237f9e`. The deployed function remains on v0006 until this pointer commit passes exact-head CI; deployment follows only after that gate.
 
 v0006 remains historical publication evidence: DSM discovered it successfully but rejected installation because its `cap_sys_ptrace` helper was classified as root-privileged.
 
