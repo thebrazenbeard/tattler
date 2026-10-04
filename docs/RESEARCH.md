@@ -8,6 +8,8 @@ Research cut: 2026-10-04. Repositories below were inspected as architecture/prov
 - `thebrazenbeard/workbridge@e88e14ea25f25abd723bb50909b3e25e67f889fd`: static Go ARMv7 build discipline, fail-closed package verification, bounded/no-authority defaults, and explicit readiness versus live qualification.
 - `thebrazenbeard/pre-active@4558923a5ddbb2672449addc424a21de9c62e7ec`: append-only journal semantics and explicit source/effect state rather than silent inference.
 - `thebrazenbeard/ingest@27764c9fb97c84d178a3f66e0da2d669df645ed6`: deterministic identity/provenance thinking and the rule that an observation receipt does not promote itself into semantic truth.
+- `thebrazenbeard/chat-communication-bus@e0bcb5eb18630693de55a1af2066411c7af079bb`: append-only reconciliation evidence and liveness/readiness separation. Tattler similarly keeps raw health observations distinct from diagnostic conclusions.
+- `thebrazenbeard/vera@788b14bb97ccd5f81506d892fbdd557323680bb0`: exact-subject findings with explicit confidence/scope and supersession thinking, reinforcing findings that carry an evidence ceiling rather than silently becoming root-cause truth.
 
 These are mechanism donors, not copied implementations.
 
