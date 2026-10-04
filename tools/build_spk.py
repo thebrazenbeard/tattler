@@ -38,6 +38,13 @@ def build(binary: Path, output: Path) -> None:
     payload_raw = io.BytesIO()
     with tarfile.open(fileobj=payload_raw, mode="w:") as inner:
         add_bytes(inner, "bin/tattler", binary_bytes, 0o755)
+        bridge_files = [
+            ("share/tattler-pkgctl/allowed_signers", ROOT / "bridge" / "tattler-release.allowed_signers", 0o644),
+            ("share/tattler-pkgctl/sudoers.tattler-pkgctl", ROOT / "bridge" / "sudoers.tattler-pkgctl", 0o644),
+            ("share/tattler-pkgctl/tattler-pkgctl", ROOT / "bridge" / "tattler-pkgctl", 0o755),
+        ]
+        for name, source, mode in bridge_files:
+            add_bytes(inner, name, source.read_bytes(), mode)
 
     package_buf = io.BytesIO()
     with gzip.GzipFile(fileobj=package_buf, mode="wb", mtime=0, filename="") as gz:

@@ -2,5 +2,19 @@
   "defaults": {
     "run-as": "package"
   },
-  "username": "Tattler"
+  "username": "Tattler",
+  "ctrl-script": [
+    {
+      "action": "postinst",
+      "run-as": "root"
+    },
+    {
+      "action": "postupgrade",
+      "run-as": "root"
+    },
+    {
+      "action": "preuninst",
+      "run-as": "root"
+    }
+  ]
 }

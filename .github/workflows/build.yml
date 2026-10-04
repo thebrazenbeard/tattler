@@ -17,6 +17,11 @@ jobs:
         run: |
           go test ./...
           go vet ./...
+          python3 -m py_compile tools/build_spk.py tools/verify_spk.py tools/verify_bridge_sources.py tools/sign_spk.py
+          python3 tools/verify_bridge_sources.py
+          sh -n bridge/tattler-pkgctl
+          for script in spk/scripts/*; do sh -n "$script"; done
+          visudo -c -f bridge/sudoers.tattler-pkgctl
       - name: Build ARMv7 twice
         env:
           CGO_ENABLED: '0'
@@ -37,9 +42,9 @@ jobs:
           python3 tools/verify_spk.py dist/Tattler-a.spk
           python3 tools/verify_spk.py dist/Tattler-b.spk
           cmp dist/Tattler-a.spk dist/Tattler-b.spk
-          mv dist/Tattler-a.spk dist/Tattler-armada38x-0.1.0-0003.spk
+          mv dist/Tattler-a.spk dist/Tattler-armada38x-0.1.0-0004.spk
           rm dist/Tattler-b.spk
       - uses: actions/upload-artifact@v4
         with:
           name: tattler-armada38x-spk
-          path: dist/Tattler-armada38x-0.1.0-0003.spk
+          path: dist/Tattler-armada38x-0.1.0-0004.spk

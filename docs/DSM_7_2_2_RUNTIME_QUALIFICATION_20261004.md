@@ -146,3 +146,25 @@ Exact subject `Tattler 0.1.0-0002`:
 - live icon-bearing v0003 runtime: NOT TESTED
 
 No merge, provider change, privilege escalation, or package-user elevation is implied by this result.
+
+
+## v0003 live upgrade addendum
+
+Package Center subsequently upgraded the DS216 from `0.1.0-0002` to `0.1.0-0003`.
+
+Direct SSH readback after the upgrade showed:
+
+- `package="Tattler"`
+- `version="0.1.0-0003"`
+- `arch="armada38x"`
+- daemon PID observed: `31934`
+- daemon user: `Tattler`
+- daemon command line unchanged
+- loopback API responsive
+- daemon binary intentionally byte-identical to the previously qualified v0002 binary
+
+Representative immediate post-upgrade readings included approximately 7 MiB RSS / 2.3% CPU for Tattler while the host itself remained heavily loaded by Plex and storage wait.
+
+This addendum establishes the v0003 package lifecycle/icon upgrade and daemon restart. It does not change the v0002 ten-minute overhead dataset's exact subject; those measurements remain bound to v0002's identical daemon binary.
+
+The two DSM icon assets are part of the v0003 SPK archive. Their absence under `/var/packages/Tattler/target/..` after installation is not evidence that Package Center rejected them; DSM consumes package metadata/assets during installation rather than preserving the original outer SPK layout there.

@@ -1,0 +1,161 @@
+#!/bin/sh
+set -eu
+
+PATH=/usr/syno/bin:/usr/bin:/bin:/usr/sbin:/sbin
+export PATH
+
+PACKAGE="Tattler"
+OPERATOR="psims85"
+STAGE_DIR="/volume1/homes/psims85/.tattler-upload"
+STAGE_SPK="$STAGE_DIR/Tattler.spk"
+STAGE_SIG="$STAGE_DIR/Tattler.spk.sig"
+ALLOWED_SIGNERS="/usr/local/share/tattler-pkgctl/allowed_signers"
+AUDIT_LOG="/var/log/tattler-pkgctl.log"
+SYNOPKG="/usr/syno/bin/synopkg"
+
+audit() {
+    msg="$1"
+    logger -t tattler-pkgctl -- "$msg" 2>/dev/null || true
+    printf '%s %s\n' "$(date -u '+%Y-%m-%dT%H:%M:%SZ')" "$msg" >>"$AUDIT_LOG" 2>/dev/null || true
+}
+
+fail() {
+    audit "DENY user=${SUDO_USER:-unknown} action=${1:-unknown} reason=${2:-unspecified}"
+    printf 'tattler-pkgctl: %s\n' "${2:-request denied}" >&2
+    exit 1
+}
+
+require_operator() {
+    [ "${SUDO_USER:-}" = "$OPERATOR" ] || fail "$1" "caller must be $OPERATOR via sudo"
+}
+
+run_synopkg() {
+    busybox timeout 180 "$SYNOPKG" "$@"
+}
+
+do_status() {
+    require_operator status
+    exec busybox timeout 20 "$SYNOPKG" status "$PACKAGE"
+}
+
+do_start() {
+    require_operator start
+    audit "ALLOW user=$SUDO_USER action=start package=$PACKAGE"
+    run_synopkg start "$PACKAGE"
+}
+
+do_stop() {
+    require_operator stop
+    audit "ALLOW user=$SUDO_USER action=stop package=$PACKAGE"
+    run_synopkg stop "$PACKAGE"
+}
+
+check_staged_file() {
+    path="$1"
+    label="$2"
+    [ -f "$path" ] || fail upgrade "$label is missing"
+    [ ! -L "$path" ] || fail upgrade "$label must not be a symlink"
+    [ "$(stat -c '%U' "$path")" = "$OPERATOR" ] || fail upgrade "$label owner must be $OPERATOR"
+    [ "$(stat -c '%h' "$path")" = "1" ] || fail upgrade "$label must have exactly one hard link"
+}
+
+extract_info_value() {
+    key="$1"
+    file="$2"
+    tar -xOf "$file" INFO 2>/dev/null |
+        sed -n "s/^${key}=\"\(.*\)\"$/\1/p" |
+        head -n 1
+}
+
+do_upgrade() {
+    require_operator upgrade
+    [ "$#" -eq 1 ] || fail upgrade "usage: tattler-pkgctl upgrade <sha256>"
+
+    expected="$(printf '%s' "$1" | tr 'A-F' 'a-f')"
+    printf '%s\n' "$expected" | grep -Eq '^[0-9a-f]{64}$' ||
+        fail upgrade "expected SHA-256 must be 64 hexadecimal characters"
+
+    [ -d "$STAGE_DIR" ] || fail upgrade "staging directory does not exist"
+    [ ! -L "$STAGE_DIR" ] || fail upgrade "staging directory must not be a symlink"
+    [ "$(stat -c '%U' "$STAGE_DIR")" = "$OPERATOR" ] ||
+        fail upgrade "staging directory owner must be $OPERATOR"
+
+    check_staged_file "$STAGE_SPK" "staged SPK"
+    check_staged_file "$STAGE_SIG" "staged signature"
+    [ -f "$ALLOWED_SIGNERS" ] && [ ! -L "$ALLOWED_SIGNERS" ] ||
+        fail upgrade "root trust store is unavailable"
+    [ "$(stat -c '%U' "$ALLOWED_SIGNERS")" = "root" ] ||
+        fail upgrade "root trust store owner is invalid"
+
+    exec 9>/var/run/tattler-pkgctl.lock
+    flock -n 9 || fail upgrade "another Tattler package operation is already running"
+
+    tmpdir="$(mktemp -d /var/tmp/tattler-pkgctl.XXXXXX)"
+    chmod 0700 "$tmpdir"
+    trap 'rm -rf "$tmpdir"' EXIT HUP INT TERM
+
+    cp -- "$STAGE_SPK" "$tmpdir/Tattler.spk"
+    cp -- "$STAGE_SIG" "$tmpdir/Tattler.spk.sig"
+    chmod 0600 "$tmpdir/Tattler.spk" "$tmpdir/Tattler.spk.sig"
+
+    actual="$(sha256sum "$tmpdir/Tattler.spk" | awk '{print $1}')"
+    [ "$actual" = "$expected" ] ||
+        fail upgrade "SHA-256 mismatch"
+
+    ssh-keygen -Y verify         -f "$ALLOWED_SIGNERS"         -I tattler-release         -n tattler         -s "$tmpdir/Tattler.spk.sig"         <"$tmpdir/Tattler.spk" >/dev/null 2>&1 ||
+        fail upgrade "release signature verification failed"
+
+    package="$(extract_info_value package "$tmpdir/Tattler.spk")"
+    version="$(extract_info_value version "$tmpdir/Tattler.spk")"
+    arch="$(extract_info_value arch "$tmpdir/Tattler.spk")"
+
+    [ "$package" = "$PACKAGE" ] || fail upgrade "SPK package id is not Tattler"
+    [ "$arch" = "armada38x" ] || fail upgrade "SPK architecture is not armada38x"
+    [ -n "$version" ] || fail upgrade "SPK version is missing"
+
+    current=""
+    if [ -r /var/packages/Tattler/INFO ]; then
+        current="$(sed -n 's/^version="\(.*\)"$/\1/p' /var/packages/Tattler/INFO | head -n 1)"
+    fi
+    [ "$version" != "$current" ] ||
+        fail upgrade "candidate version $version is already installed"
+
+    audit "ALLOW user=$SUDO_USER action=upgrade package=$PACKAGE from=${current:-none} to=$version sha256=$actual signer=tattler-release"
+
+    if ! run_synopkg install "$tmpdir/Tattler.spk"; then
+        rc=$?
+        audit "FAIL user=$SUDO_USER action=upgrade package=$PACKAGE to=$version rc=$rc"
+        exit "$rc"
+    fi
+
+    sleep 2
+    installed="$(sed -n 's/^version="\(.*\)"$/\1/p' /var/packages/Tattler/INFO 2>/dev/null | head -n 1 || true)"
+    [ "$installed" = "$version" ] ||
+        fail upgrade "DSM did not report candidate version after install"
+
+    audit "PASS user=$SUDO_USER action=upgrade package=$PACKAGE version=$installed sha256=$actual"
+    printf 'Tattler upgraded to %s\n' "$installed"
+}
+
+case "${1:-}" in
+    status)
+        [ "$#" -eq 1 ] || fail status "usage: tattler-pkgctl status"
+        do_status
+        ;;
+    start)
+        [ "$#" -eq 1 ] || fail start "usage: tattler-pkgctl start"
+        do_start
+        ;;
+    stop)
+        [ "$#" -eq 1 ] || fail stop "usage: tattler-pkgctl stop"
+        do_stop
+        ;;
+    upgrade)
+        shift
+        do_upgrade "$@"
+        ;;
+    *)
+        printf 'usage: tattler-pkgctl {status|start|stop|upgrade <sha256>}\n' >&2
+        exit 2
+        ;;
+esac

@@ -1,2 +1,14 @@
 #!/bin/sh
+set -eu
+
+[ "$(id -u)" = "0" ] || {
+    echo "Tattler bridge removal must run as root." >&2
+    exit 1
+}
+
+rm -f /etc/sudoers.d/tattler-pkgctl
+rm -f /usr/local/sbin/tattler-pkgctl
+rm -rf /usr/local/share/tattler-pkgctl
+
+logger -t tattler-pkgctl -- "UNINSTALL bridge=removed operator=psims85 audit_log_preserved=/var/log/tattler-pkgctl.log" 2>/dev/null || true
 exit 0
