@@ -5,49 +5,51 @@ This directory contains two adapters for the same DSM package catalog contract:
 - `api/catalog.js`: Vercel-compatible adapter.
 - `supabase/index.ts`: Supabase Edge Function adapter.
 
-The Vercel connector lacks project-creation permission, so the Supabase adapter is the active deployment.
+The Supabase adapter is the active deployment.
 
-## Current immutable release
+## Staged immutable release
 
-The catalog is pinned to Git commit:
+The source tree now contains the exact CI-qualified v0007 artifact:
 
-`7d3c1561b8d6f64133641121c7cc451771bf4d33`
+- version: `0.1.0-0007`
+- filename: `Tattler-armada38x-0.1.0-0007.spk`
+- SHA-256: `a70428e2d9a0f132e5eb3b12d7c7c3608b12601200c023c51354083ea4b8b736`
+- MD5: `d22eae80bd6b8226aaa168bdf403910a`
+- size: `2,273,280` bytes
+- privilege model: package-user only; no root lifecycle actions and no file capabilities
 
-**Compatibility note:** this currently published v0006 release is discoverable by DSM but was rejected before installation because DSM classified its `cap_sys_ptrace` helper as root-privileged. It is retained as publication evidence only while the package-user-only v0007 replacement is being qualified.
+The live Supabase function remains pinned to the preceding v0006 release until the commit containing this exact v0007 payload passes the publication-binding CI gate. Only then is the live function pointer advanced.
 
-That commit contains:
-
-- `release.json`
-- the exact CI-qualified v0006 SPK
-- 64x64 and 256x256 package icons
-
-The SPK SHA-256 is:
-
-`fdb3bf8b4d358cca397b4688d3e25ce01d1ef8df43f3a7d4d5a965eb4c1ee22c`
-
-The Supabase function fetches only the pinned release manifest and serves catalog links back to immutable raw GitHub URLs under the same commit. Deployment readback on 2026-10-04 confirmed both DSM-style GET and POST catalog requests return Tattler 0.1.0-0006, and the DS216 itself can reach the feed and download the complete 3,164,160-byte SPK body.
-
-Live package-source endpoint: `https://fawkirqroyniueeqspif.supabase.co/functions/v1/tattler-package-source`
+v0006 remains historical publication evidence: DSM discovered it successfully but rejected installation because its `cap_sys_ptrace` helper was classified as root-privileged.
 
 ## DSM contract
 
-The endpoint accepts both GET query parameters and POST form parameters because mature Synology package repositories support both forms.
+The endpoint accepts both GET query parameters and POST form parameters.
 
 It returns Tattler only when:
 
 - `arch=armada38x`
 - `build>=72806`
 
-The function is intentionally public and read-only. A DSM Package Source cannot provide a JWT when Package Center polls it, so the deployed Edge Function must use `verify_jwt=false`. The function accepts no mutation method and exposes no database or secret.
+The function is intentionally public and read-only. DSM Package Center cannot attach an application JWT to third-party package-source polling, so the deployed Edge Function uses `verify_jwt=false`. The function accepts no mutation method and exposes no database or secret.
+
+Live package-source endpoint:
+
+`https://fawkirqroyniueeqspif.supabase.co/functions/v1/tattler-package-source`
+
+The DS216 already has this source registered as `Tattler`.
 
 ## Release process
 
 For a new qualified Tattler version:
 
-1. Build and structurally verify the SPK.
-2. Run `tools/update_package_source.py` against that exact SPK.
-3. Commit the generated release manifest, icons, and SPK.
-4. Require CI to reproduce and byte-compare the published SPK.
-5. Advance the Edge Function's immutable `SOURCE_COMMIT` to the commit containing the qualified release payload.
-6. Deploy a new function version.
-7. Verify Package Center discovers the update before claiming publication PASS.
+1. Build/test the source on exact-head CI.
+2. Upload the deterministic CI SPK before the publication-binding check.
+3. Download that exact CI artifact.
+4. Run Tattler's verifier and the pinned independent `spk-packager` verifier.
+5. Run `tools/update_package_source.py` against the CI artifact.
+6. Commit the generated release manifest, icons, and exact SPK.
+7. Require exact-head CI to reproduce and byte-compare the published SPK.
+8. Advance the Edge Function's immutable `SOURCE_COMMIT` only to that green release commit.
+9. Deploy a new Edge Function version.
+10. Verify GET, POST, returned SPK hash, NAS-side reachability, Package Center discovery, and DSM installation before claiming runtime PASS.
