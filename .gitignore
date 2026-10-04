@@ -1,0 +1,6 @@
+dist/
+*.spk
+*.log
+tattler-state/
+__pycache__/
+*.pyc
