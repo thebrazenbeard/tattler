@@ -2,6 +2,7 @@ package store
 
 import (
 	"bufio"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"os"
@@ -29,6 +30,39 @@ func TestCloseReturnsFlushFailure(t *testing.T) {
 	}
 	if err := s.Close(); err == nil {
 		t.Fatal("Close succeeded despite buffered flush failure")
+	}
+}
+
+func TestReadRecentIncludesRotationRecoveryFile(t *testing.T) {
+	dir := t.TempDir()
+	base := filepath.Join(dir, "events.jsonl")
+	writeEvent := func(path, id string, second int64) {
+		t.Helper()
+		ev := model.Event{SchemaVersion: 1, ID: id, Time: time.Unix(second, 0).UTC(), Kind: "open", Source: "test"}
+		b, err := json.Marshal(ev)
+		if err != nil {
+			t.Fatal(err)
+		}
+		b = append(b, '\n')
+		if err := os.WriteFile(path, b, 0600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	writeEvent(base+".rotate-oldest", "event-1", 1)
+	writeEvent(base+".1", "event-2", 2)
+	writeEvent(base, "event-3", 3)
+
+	events, err := ReadRecent(dir, 2, 3)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(events) != 3 {
+		t.Fatalf("events=%d want=3", len(events))
+	}
+	for i, want := range []string{"event-1", "event-2", "event-3"} {
+		if events[i].ID != want {
+			t.Fatalf("events[%d].ID=%q want=%q", i, events[i].ID, want)
+		}
 	}
 }
 

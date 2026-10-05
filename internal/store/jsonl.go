@@ -212,6 +212,18 @@ func ReadRecent(dir string, keep, limit int) ([]model.Event, error) {
 		merged = append(merged, out...)
 		out = merged
 	}
+	if keep > 0 && len(out) < limit {
+		recovery, err := readRecentFile(base+".rotate-oldest", limit-len(out))
+		if err != nil {
+			errs = append(errs, err)
+		}
+		if len(recovery) > 0 {
+			merged := make([]model.Event, 0, len(recovery)+len(out))
+			merged = append(merged, recovery...)
+			merged = append(merged, out...)
+			out = merged
+		}
+	}
 	return out, errors.Join(errs...)
 }
 
