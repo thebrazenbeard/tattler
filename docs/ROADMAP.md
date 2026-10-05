@@ -21,13 +21,13 @@ Qualification gates before calling the SPK runtime-ready:
 - Controlled CPU, memory, I/O-wait, swap, inbound-TCP, and outbound-TCP fixtures produce the expected measurements/findings/events.
 - Live DSM evidence confirms thresholds are useful without causing alert churn.
 
-Source status for the journal portion of this gate: restart restoration, bounded recent-history recovery, rotation error propagation/rollback, close-flush error reporting, and interrupted-rotation recovery-file visibility are implemented and exact-head CI qualified in the `0.2.0-0001` candidate. They are **not** yet DS216 runtime-qualified; the live NAS remains on `0.1.0-0007`.
+Source status for the journal portion of this gate: restart restoration, bounded recent-history recovery, rotation error propagation/rollback, close-flush error reporting, and interrupted-rotation recovery-file visibility are implemented and exact-head CI qualified in the `0.2.0-0001` candidate and carried forward into `0.2.0-0002`. They are **not** yet DS216 runtime-qualified; the live NAS remains on `0.1.0-0007`.
 
 Controlled source fixtures now explicitly cover CPU saturation, blocked-load behavior, memory pressure, swap churn, I/O wait, major faults, and both inbound/outbound TCP direction carried into emitted connection events. Live DS216 behavioral qualification remains a separate gate.
 
 ## V0.2 — storage and DSM evidence
 
-Source candidate `0.2.0-0001` implements per-physical-disk evidence from already-readable `/proc/diskstats`: throughput, IOPS, average completion latency, utilization, and weighted queue depth. Existing `storage-wait` findings carry the hottest disk's measured utilization/latency/queue evidence when available.
+Source candidate `0.2.0-0001` introduced per-physical-disk evidence; current candidate `0.2.0-0002` carries it forward unchanged while adding native Windows support. The Linux storage slice implements per-physical-disk evidence from already-readable `/proc/diskstats`: throughput, IOPS, average completion latency, utilization, and weighted queue depth. Existing `storage-wait` findings carry the hottest disk's measured utilization/latency/queue evidence when available.
 
 The candidate also reads standard Linux MD state from `/proc/mdstat`: array state/level, configured vs active members, health bitmap, and rebuild/resync progress. A `raid-degraded` warning is emitted only when member counts or the health bitmap prove degradation. This MD slice is source/test qualified, not yet DS216 runtime-qualified because the latest live SSH probe did not yield trustworthy output.
 

@@ -8,6 +8,7 @@ Status: SOURCE / BUILD / WORKLAPTOP RUNTIME QUALIFIED CANDIDATE; NOT MERGED OR R
 - Base `main`: `9d92e987aa8217a395fdc41f317d0d43e50e371e`
 - Implementation commit: `600e76fd4aafc493a67aed2220bb3b7022225196`
 - Branch: `build/windows-native-v1`
+- DSM source/package candidate on this branch: `0.2.0-0002`
 - Native qualification host: Windows WorkLaptop
 - Go toolchain used for live qualification: Go 1.27.0 windows/amd64
 
@@ -64,6 +65,11 @@ Observed readback:
 
 The connection count and resource values are observations from that runtime cut, not fixed product properties.
 
+
+## Linux compatibility probe on WorkLaptop
+
+A Linux AMD64 build from the same source was executed under the WorkLaptop's WSL2 Linux kernel (`6.18.33.2-microsoft-standard-WSL2`). Tattler started with its Linux `proc-sampler`, served the loopback API, and returned Linux CPU, memory, disk, process, and connection evidence. This is a Linux runtime compatibility probe; it is not DSM hardware/runtime qualification and does not replace DS216 readback.
+
 ## Evidence ceiling
 
 This first native Windows backend does **not** claim Windows UDP endpoint capture, ETW tracing, per-process CPU/I/O telemetry, native disk throughput/latency, Linux-style load average, Linux I/O wait, Linux swap activity, major-fault equivalence, or RAID state.
@@ -81,6 +87,6 @@ The branch adds a Windows GitHub Actions job that:
 - performs a native loopback runtime smoke test;
 - publishes `tattler-windows-amd64.exe` as a workflow artifact.
 
-That CI path is SOURCE_READY at this receipt. It is not CI-verified until the branch is pushed and GitHub Actions completes successfully.
+The Windows CI path passed on the published branch. The Linux package job initially failed its package-source provenance guard because the shared binary had changed while the DSM candidate still used the old `0.2.0-0001` package identity. The branch therefore advances the source/package candidate to `0.2.0-0002` instead of overwriting `0.2.0-0001` with different bytes. Final CI for `0.2.0-0002` remains a separate check.
 
 No merge, release publication, installer creation, service installation, or protected deployment effect is established by this receipt.

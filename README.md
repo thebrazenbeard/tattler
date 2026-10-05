@@ -118,7 +118,7 @@ The same source candidate also closes several journal-durability gaps without ch
 
 A leftover `.rotate-oldest` still blocks later rotation rather than being guessed away automatically. That is intentional fail-closed behavior: the source preserves ambiguous recovery evidence instead of deleting it without enough state to prove the prior rotation completed.
 
-`0.2.0-0001` is currently **SOURCE/BUILD/PACKAGE/EXACT-HEAD-CI VERIFIED ONLY**. The live DS216 remains on runtime-qualified `0.1.0-0007` until a separate install/upgrade is explicitly authorized and read back.
+`0.2.0-0001` was the prior SOURCE/BUILD/PACKAGE/EXACT-HEAD-CI-qualified candidate. The current branch advances the package candidate to `0.2.0-0002` because the shared binary changed for native Windows support. The live DS216 remains on runtime-qualified `0.1.0-0007` until a separate install/upgrade is explicitly authorized and read back.
 
 ## Native DSM updates
 
@@ -176,9 +176,9 @@ Current live runtime subject `0.1.0-0007`:
 
 `PACKAGE_USER_ONLY / UID_OWNER_ATTRIBUTION_IMPLEMENTED / PACKAGE_SOURCE_LIVE / NATIVE_PACKAGE_CENTER_UPGRADE_PASS / LIVE_DAEMON_PASS / LOOPBACK_API_PASS / UID_OWNER_ATTRIBUTION_RUNTIME_PASS`
 
-Current source/package candidate `0.2.0-0001`:
+Current source/package candidate `0.2.0-0002`:
 
-`DISK_PRESSURE_EVIDENCE_IMPLEMENTED / RESTART_EVENT_RESTORE_IMPLEMENTED / BOUNDED_HISTORY_SCAN / ROTATION_FAILURE_SAFE / CLOSE_FLUSH_ERRORS_SURFACED / RECOVERY_FILE_VISIBLE / LOCAL_TEST_VET_PASS / DETERMINISTIC_ARMV7_BUILD_PASS / DETERMINISTIC_SPK_PASS / INDEPENDENT_DSM_7_2_2_VERIFY_PASS / EXACT_HEAD_CI_PASS / CI_PACKAGE_SOURCE_BOUND / NOT_INSTALLED / RUNTIME_NOT_QUALIFIED`
+`DISK_PRESSURE_EVIDENCE_IMPLEMENTED / RESTART_EVENT_RESTORE_IMPLEMENTED / BOUNDED_HISTORY_SCAN / ROTATION_FAILURE_SAFE / CLOSE_FLUSH_ERRORS_SURFACED / RECOVERY_FILE_VISIBLE / NATIVE_WINDOWS_TCP_PID_EVIDENCE / WINDOWS_CPU_MEMORY_EVIDENCE / WINDOWS_EXECUTABLE_BUILD_PATH / DASHBOARD_BRANDING / LOCAL_WINDOWS_TEST_VET_RUNTIME_PASS / WSL2_LINUX_RUNTIME_PASS / DETERMINISTIC_ARMV7_BUILD_PASS / DETERMINISTIC_SPK_PASS / CI_PENDING_FOR_0002 / NOT_INSTALLED_ON_DSM / DSM_RUNTIME_NOT_QUALIFIED`
 
 Direct DSM readback after the native upgrade observed:
 - installed version `0.1.0-0007`, architecture `armada38x`;
