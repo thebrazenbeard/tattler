@@ -108,55 +108,70 @@ func ReadRecent(dir string, keep, limit int) ([]model.Event, error) {
 	}
 
 	base := filepath.Join(dir, "events.jsonl")
+	out := make([]model.Event, 0, limit)
+	var errs []error
+	for i := 0; i <= keep && len(out) < limit; i++ {
+		path := base
+		if i > 0 {
+			path = fmt.Sprintf("%s.%d", base, i)
+		}
+		events, err := readRecentFile(path, limit-len(out))
+		if err != nil {
+			errs = append(errs, err)
+		}
+		if len(events) == 0 {
+			continue
+		}
+		merged := make([]model.Event, 0, len(events)+len(out))
+		merged = append(merged, events...)
+		merged = append(merged, out...)
+		out = merged
+	}
+	return out, errors.Join(errs...)
+}
+
+func readRecentFile(path string, limit int) ([]model.Event, error) {
+	if limit <= 0 {
+		return nil, nil
+	}
+	f, err := os.Open(path)
+	if err != nil {
+		if errors.Is(err, os.ErrNotExist) {
+			return nil, nil
+		}
+		return nil, fmt.Errorf("read %s: %w", filepath.Base(path), err)
+	}
+	defer f.Close()
+
 	ring := make([]model.Event, limit)
 	count, next := 0, 0
 	var errs []error
-
-	add := func(ev model.Event) {
+	scanner := bufio.NewScanner(f)
+	scanner.Buffer(make([]byte, 64*1024), 1024*1024)
+	line := 0
+	for scanner.Scan() {
+		line++
+		if len(scanner.Bytes()) == 0 {
+			continue
+		}
+		var ev model.Event
+		if err := json.Unmarshal(scanner.Bytes(), &ev); err != nil {
+			errs = append(errs, fmt.Errorf("read %s line %d: %w", filepath.Base(path), line, err))
+			continue
+		}
 		ring[next] = ev
 		next = (next + 1) % limit
 		if count < limit {
 			count++
 		}
 	}
-	read := func(path string) {
-		f, err := os.Open(path)
-		if err != nil {
-			if !errors.Is(err, os.ErrNotExist) {
-				errs = append(errs, fmt.Errorf("read %s: %w", filepath.Base(path), err))
-			}
-			return
-		}
-		defer f.Close()
-
-		scanner := bufio.NewScanner(f)
-		scanner.Buffer(make([]byte, 64*1024), 1024*1024)
-		line := 0
-		for scanner.Scan() {
-			line++
-			if len(scanner.Bytes()) == 0 {
-				continue
-			}
-			var ev model.Event
-			if err := json.Unmarshal(scanner.Bytes(), &ev); err != nil {
-				errs = append(errs, fmt.Errorf("read %s line %d: %w", filepath.Base(path), line, err))
-				continue
-			}
-			add(ev)
-		}
-		if err := scanner.Err(); err != nil {
-			errs = append(errs, fmt.Errorf("scan %s: %w", filepath.Base(path), err))
-		}
+	if err := scanner.Err(); err != nil {
+		errs = append(errs, fmt.Errorf("scan %s: %w", filepath.Base(path), err))
 	}
-
-	for i := keep; i >= 1; i-- {
-		read(fmt.Sprintf("%s.%d", base, i))
-	}
-	read(base)
-
 	if count == 0 {
 		return nil, errors.Join(errs...)
 	}
+
 	out := make([]model.Event, count)
 	start := 0
 	if count == limit {
