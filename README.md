@@ -1,10 +1,10 @@
 # Tattler
 
-Tattler is a low-overhead Linux/NAS diagnostic agent built to answer a practical question:
+Tattler is a low-overhead host diagnostic agent built to answer a practical question:
 
 > Why is this machine slow right now?
 
-The first deployment target is Synology DSM on DS216-class ARMv7 hardware, but the collector and diagnosis engine are portable Linux Go code.
+The first deployment target is Synology DSM on DS216-class ARMv7 hardware. Tattler now also has a native Windows collector and Windows AMD64 executable path; the Linux/DSM and Windows backends feed the same evidence model, journal, API, and dashboard.
 
 ## V0.1 diagnostic surface
 
@@ -24,6 +24,38 @@ The loopback-only dashboard/API exposes:
 - `/api/v1/findings`
 - `/api/v1/current`
 - `/api/v1/events`
+
+
+## Native Windows agent
+
+The Windows backend is native; it does not depend on WSL or Linux `/proc`.
+
+Current Windows evidence uses:
+
+- `GetExtendedTcpTable` for IPv4/IPv6 TCP endpoint state and owning PID;
+- `QueryFullProcessImageNameW` for best-effort executable/name enrichment when the process handle is readable;
+- `GetSystemTimes` for host CPU utilization;
+- `GlobalMemoryStatusEx` for physical-memory totals and availability.
+
+Listener evidence from the same Windows TCP table is used to classify established sockets as inbound or outbound. Exact PID comes from the Windows endpoint table; process name/executable is left empty when Windows does not permit that enrichment.
+
+Windows does not silently reinterpret Linux-only measurements. The API reports these as `unavailable_metrics` until a native equivalent is implemented and qualified: load average, Linux I/O wait, swap activity, major faults, disk throughput/latency, and RAID state.
+
+Windows UDP endpoint capture, ETW tracing, per-process CPU/I/O sampling, and native disk-latency telemetry are not claimed by this first Windows backend. Those remain separate follow-on evidence surfaces rather than being inferred from TCP or host-level counters.
+
+Build and run on Windows:
+
+```powershell
+go test ./...
+go vet ./...
+New-Item -ItemType Directory -Force dist | Out-Null
+go build -trimpath -buildvcs=false -ldflags="-s -w -buildid=" -o dist/tattler-windows-amd64.exe ./cmd/tattler
+
+.\dist\tattler-windows-amd64.exe --state-dir .\tattler-state
+# Dashboard: http://127.0.0.1:9147/
+```
+
+CI builds the Windows binary twice, requires byte-identical SHA-256 output, performs a native loopback API smoke test, and publishes `tattler-windows-amd64.exe` as a workflow artifact.
 
 ## DSM privilege model
 

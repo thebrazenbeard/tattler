@@ -47,6 +47,7 @@ type RAIDArraySample struct {
 type Sample struct {
 	SchemaVersion      int               `json:"schema_version"`
 	ObservedAt         time.Time         `json:"observed_at"`
+	Platform           string            `json:"platform,omitempty"`
 	Load1              float64           `json:"load1"`
 	Load5              float64           `json:"load5"`
 	Load15             float64           `json:"load15"`
@@ -66,6 +67,16 @@ type Sample struct {
 	RAIDArrays         []RAIDArraySample `json:"raid_arrays,omitempty"`
 	ProcessesRunning   int               `json:"processes_running"`
 	TopProcesses       []ProcessSample   `json:"top_processes,omitempty"`
+	UnavailableMetrics []string          `json:"unavailable_metrics,omitempty"`
+}
+
+func (s Sample) MetricUnavailable(name string) bool {
+	for _, metric := range s.UnavailableMetrics {
+		if metric == name {
+			return true
+		}
+	}
+	return false
 }
 
 type Finding struct {
@@ -133,6 +144,7 @@ func (s *Sampler) Sample(now time.Time) (Sample, error) {
 	var out Sample
 	out.SchemaVersion = 1
 	out.ObservedAt = now
+	out.Platform = "linux"
 
 	var errs []error
 	if err := readLoad(filepath.Join(s.ProcRoot, "loadavg"), &out); err != nil {

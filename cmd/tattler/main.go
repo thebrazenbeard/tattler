@@ -12,6 +12,7 @@ import (
 	"os"
 	"os/signal"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"syscall"
 	"time"
@@ -24,6 +25,7 @@ import (
 	"github.com/thebrazenbeard/tattler/internal/store"
 	"github.com/thebrazenbeard/tattler/internal/tracker"
 	"github.com/thebrazenbeard/tattler/internal/uidmap"
+	"github.com/thebrazenbeard/tattler/internal/wincollect"
 )
 
 func main() {
@@ -70,19 +72,37 @@ func main() {
 	tr := tracker.New()
 	uiState := newUIState(statePath, *keepLogs)
 	sysSampler := metrics.NewSampler(*procRoot)
-	if sample, sampleErr := sysSampler.Sample(time.Now().UTC()); sampleErr != nil {
+	windowsSampler := wincollect.New()
+	cache := make(map[uint64]model.ProcessInfo)
+	source := "proc-sampler"
+	if runtime.GOOS == "windows" {
+		source = "windows-ip-helper"
+	}
+	uiState.SetSource(source)
+	sampleSystem := func(at time.Time) (metrics.Sample, error) {
+		if runtime.GOOS == "windows" {
+			return windowsSampler.Sample(at)
+		}
+		return sysSampler.Sample(at)
+	}
+	readConnections := func() ([]model.Connection, error) {
+		if runtime.GOOS == "windows" {
+			return windowsSampler.Connections()
+		}
+		snap, err := procnet.Read(*procRoot)
+		return decorate(snap, *procRoot, owners, local, cache), err
+	}
+	if sample, sampleErr := sampleSystem(time.Now().UTC()); sampleErr != nil {
 		log.Printf("initial system sample warning: %v", sampleErr)
 		uiState.AddSystem(sample, metrics.Diagnose(sample))
 	} else {
 		uiState.AddSystem(sample, metrics.Diagnose(sample))
 	}
 
-	snap, err := procnet.Read(*procRoot)
+	initial, err := readConnections()
 	if err != nil {
-		log.Printf("initial proc scan warning: %v", err)
+		log.Printf("initial connection scan warning: %v", err)
 	}
-	cache := make(map[uint64]model.ProcessInfo)
-	initial := decorate(snap, *procRoot, owners, local, cache)
 	tr.Baseline(initial)
 	uiState.SetCurrent(initial)
 
@@ -110,19 +130,18 @@ func main() {
 			_ = httpServer.Shutdown(shutdownCtx)
 			return
 		case <-connectionTicker.C:
-			snap, err := procnet.Read(*procRoot)
+			current, err := readConnections()
 			if err != nil {
-				log.Printf("proc scan warning: %v", err)
+				log.Printf("connection scan warning: %v", err)
 			}
-			current := decorate(snap, *procRoot, owners, local, cache)
 			opened, closed := tr.Diff(current)
 			now := time.Now().UTC()
 			events := make([]model.Event, 0, len(opened)+len(closed))
 			for _, c := range opened {
-				events = append(events, model.NewEvent(now, hostname, "open", "proc-sampler", c))
+				events = append(events, model.NewEvent(now, hostname, "open", source, c))
 			}
 			for _, c := range closed {
-				events = append(events, model.NewEvent(now, hostname, "close", "proc-sampler", c))
+				events = append(events, model.NewEvent(now, hostname, "close", source, c))
 			}
 			if err := journal.Append(events); err != nil {
 				log.Printf("journal append: %v", err)
@@ -131,7 +150,7 @@ func main() {
 			uiState.SetCurrent(current)
 			pruneCache(cache, current)
 		case now := <-metricsTicker.C:
-			systemSample, systemErr := sysSampler.Sample(now.UTC())
+			systemSample, systemErr := sampleSystem(now.UTC())
 			if systemErr != nil {
 				log.Printf("system sample warning: %v", systemErr)
 			}

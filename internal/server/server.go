@@ -1,6 +1,7 @@
 package server
 
 import (
+	_ "embed"
 	"encoding/json"
 	"net/http"
 	"strconv"
@@ -58,6 +59,9 @@ func (s *State) AddSystem(sample metrics.Sample, findings []metrics.Finding) {
 	s.findings = append([]metrics.Finding(nil), findings...)
 }
 
+//go:embed tattler-icon.png
+var tattlerIcon []byte
+
 type Server struct{ State *State }
 
 func (s *Server) Handler() http.Handler {
@@ -68,6 +72,7 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("/api/v1/events", s.events)
 	mux.HandleFunc("/api/v1/system", s.system)
 	mux.HandleFunc("/api/v1/findings", s.findings)
+	mux.HandleFunc("/assets/tattler-icon.png", s.icon)
 	mux.HandleFunc("/", s.index)
 	return mux
 }
@@ -142,6 +147,12 @@ func boundedLimit(r *http.Request, fallback, ceiling int) int {
 	return limit
 }
 
+func (s *Server) icon(w http.ResponseWriter, _ *http.Request) {
+	w.Header().Set("Content-Type", "image/png")
+	w.Header().Set("Cache-Control", "public, max-age=86400")
+	_, _ = w.Write(tattlerIcon)
+}
+
 func (s *Server) index(w http.ResponseWriter, _ *http.Request) {
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
 	_, _ = w.Write(indexHTML)
@@ -153,14 +164,15 @@ func writeJSON(w http.ResponseWriter, v any) {
 }
 
 var indexHTML = []byte(`<!doctype html>
-<html><head><meta charset="utf-8"><title>Tattler</title>
+<html><head><meta charset="utf-8"><title>Tattler</title><link rel="icon" href="/assets/tattler-icon.png">
 <style>
 body{font:14px system-ui;background:#111;color:#eee;margin:24px}
 .cards{display:flex;gap:12px;flex-wrap:wrap}.card{background:#1d1d1d;padding:12px 16px;border-radius:8px;min-width:130px}
 .big{font-size:22px;font-weight:700}table{border-collapse:collapse;width:100%;margin-top:16px}
 th,td{padding:7px;border-bottom:1px solid #333;text-align:left}code{color:#9fe}
+.brand{display:flex;align-items:center;gap:12px}.brand-icon{width:56px;height:56px;border-radius:12px}.brand h1{margin:0}
 .inbound{color:#ffb86c}.outbound{color:#8be9fd}.finding{background:#332b1c;padding:9px;margin:8px 0;border-radius:6px}
-</style></head><body><h1>Tattler</h1><p id="meta">Loading...</p>
+</style></head><body><div class="brand"><img class="brand-icon" src="/assets/tattler-icon.png" alt="Tattler icon"><h1>Tattler</h1></div><p id="meta">Loading...</p>
 <div class="cards"><div class="card"><div>CPU</div><div class="big" id="cpu">-</div></div>
 <div class="card"><div>I/O wait</div><div class="big" id="iow">-</div></div>
 <div class="card"><div>Memory available</div><div class="big" id="mem">-</div></div>
@@ -169,16 +181,17 @@ th,td{padding:7px;border-bottom:1px solid #333;text-align:left}code{color:#9fe}
 <h2>Current connections</h2><table><thead><tr><th>Direction</th><th>Process</th><th>Protocol</th><th>Local</th><th>Remote</th><th>State</th></tr></thead><tbody id="connections"></tbody></table>
 <script>
 function pct(n){return Number(n||0).toFixed(1)+'%'}
+function unavailable(s,n){return Array.isArray(s.unavailable_metrics)&&s.unavailable_metrics.includes(n)}
 function esc(v){return String(v??'').replace(/[&<>\"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','\"':'&quot;',"'":'&#39;'}[c]))}
 async function tick(){
  const st=await fetch('/api/v1/status').then(r=>r.json());
  const cs=await fetch('/api/v1/current').then(r=>r.json());
  const fs=await fetch('/api/v1/findings').then(r=>r.json());
  const s=st.latest_system||{};
- document.getElementById('meta').textContent=st.collector+' | '+st.current_connections+' connections | '+st.recent_events+' connection events';
+ document.getElementById('meta').textContent=(s.platform?s.platform+' | ':'')+st.collector+' | '+st.current_connections+' connections | '+st.recent_events+' connection events';
  document.getElementById('cpu').textContent=pct(s.cpu_percent);
- document.getElementById('iow').textContent=pct(s.io_wait_percent);
- document.getElementById('load').textContent=Number(s.load1||0).toFixed(2);
+ document.getElementById('iow').textContent=unavailable(s,'io_wait_percent')?'n/a':pct(s.io_wait_percent);
+ document.getElementById('load').textContent=unavailable(s,'load_average')?'n/a':Number(s.load1||0).toFixed(2);
  document.getElementById('mem').textContent=s.mem_total_kb?((s.mem_available_kb/s.mem_total_kb)*100).toFixed(1)+'%':'-';
  document.getElementById('findings').innerHTML=fs.length?fs.map(f=>'<div class="finding"><b>'+esc(f.severity).toUpperCase()+': '+esc(f.summary)+'</b><br>'+esc(f.evidence)+'</div>').join(''):'None';
  document.getElementById('connections').innerHTML=cs.map(c=>'<tr><td class="'+esc(c.direction)+'">'+esc(c.direction)+'</td><td>'+esc((c.process&&c.process.name)||c.owner||'?')+((c.process&&c.process.pid)?' ('+esc(c.process.pid)+')':'')+'</td><td>'+esc(c.protocol)+'</td><td><code>'+esc(c.local)+'</code></td><td><code>'+esc(c.remote)+'</code></td><td>'+esc(c.state)+'</td></tr>').join('');
