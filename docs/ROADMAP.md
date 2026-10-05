@@ -27,9 +27,11 @@ Controlled source fixtures now explicitly cover CPU saturation, blocked-load beh
 
 ## V0.2 — storage and DSM evidence
 
-Source candidate `0.2.0-0001` implements the first storage-evidence slice from already-readable `/proc/diskstats`: per-physical-disk throughput, IOPS, average completion latency, utilization, and weighted queue depth. Existing `storage-wait` findings now carry the hottest disk's measured utilization/latency/queue evidence when available.
+Source candidate `0.2.0-0001` implements per-physical-disk evidence from already-readable `/proc/diskstats`: throughput, IOPS, average completion latency, utilization, and weighted queue depth. Existing `storage-wait` findings carry the hottest disk's measured utilization/latency/queue evidence when available.
 
-Still pending runtime qualification and later V0.2 work: DSM/md RAID state, device/volume identity, optional low-frequency SMART evidence, and any additional source-specific collectors. Keep expensive SMART polling far outside the hot path.
+The candidate also reads standard Linux MD state from `/proc/mdstat`: array state/level, configured vs active members, health bitmap, and rebuild/resync progress. A `raid-degraded` warning is emitted only when member counts or the health bitmap prove degradation. This MD slice is source/test qualified, not yet DS216 runtime-qualified because the latest live SSH probe did not yield trustworthy output.
+
+Still pending later V0.2 work: DSM-specific device/volume identity, optional low-frequency SMART evidence, and any additional source-specific collectors. Keep expensive SMART polling far outside the hot path.
 
 ## V0.3 — durable diagnostic history
 

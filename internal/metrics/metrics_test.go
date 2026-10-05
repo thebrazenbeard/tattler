@@ -98,6 +98,61 @@ func TestDiagnoseCPUAndBlockedLoadFindings(t *testing.T) {
 	}
 }
 
+func TestRAIDArrayEvidenceAndDegradedFinding(t *testing.T) {
+	root := t.TempDir()
+	writeFixture(t, root, 100, 200, 10, 20, 100, 1000, 2000, 20, 10)
+	mustWrite(t, filepath.Join(root, "mdstat"), `Personalities : [raid1]
+md2 : active raid1 sda5[0] sdb5[1](F)
+      3906885440 blocks super 1.2 [2/1] [U_]
+      [=======>.............]  recovery = 42.3% (1650000000/3906885440) finish=120.0min speed=312000K/sec
+
+unused devices: <none>
+`)
+
+	s := NewSampler(root)
+	sample, err := s.Sample(time.Date(2026, 10, 4, 12, 0, 0, 0, time.UTC))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(sample.RAIDArrays) != 1 {
+		t.Fatalf("raid arrays=%+v", sample.RAIDArrays)
+	}
+	array := sample.RAIDArrays[0]
+	if array.Name != "md2" || array.State != "active" || array.Level != "raid1" {
+		t.Fatalf("raid identity=%+v", array)
+	}
+	if array.RaidDevices != 2 || array.ActiveDevices != 1 || array.Health != "U_" {
+		t.Fatalf("raid health=%+v", array)
+	}
+	if array.SyncAction != "recovery" || array.SyncProgressPercent < 42.29 || array.SyncProgressPercent > 42.31 {
+		t.Fatalf("raid sync=%+v", array)
+	}
+
+	findings := Diagnose(sample)
+	for _, finding := range findings {
+		if finding.Code == "raid-degraded" {
+			return
+		}
+	}
+	t.Fatalf("missing raid-degraded finding in %+v", findings)
+}
+
+func TestHealthyRAIDArrayDoesNotWarn(t *testing.T) {
+	findings := Diagnose(Sample{RAIDArrays: []RAIDArraySample{{
+		Name:          "md0",
+		State:         "active",
+		Level:         "raid1",
+		RaidDevices:   2,
+		ActiveDevices: 2,
+		Health:        "UU",
+	}}})
+	for _, finding := range findings {
+		if finding.Code == "raid-degraded" {
+			t.Fatalf("unexpected degraded finding: %+v", finding)
+		}
+	}
+}
+
 func TestPhysicalDiskLatencyUtilizationAndQueue(t *testing.T) {
 	root := t.TempDir()
 	writeFixture(t, root, 100, 200, 10, 20, 100, 1000, 2000, 20, 10)

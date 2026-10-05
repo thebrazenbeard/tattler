@@ -68,9 +68,13 @@ Source candidate `0.2.0-0001` adds per-physical-disk evidence from Linux `/proc/
 - average I/O completion latency (`await_ms`);
 - device busy time as `utilization_percent`;
 - weighted average queue depth;
-- richer `storage-wait` evidence naming the hottest observed physical disk.
+- richer `storage-wait` evidence naming the hottest observed physical disk;
+- read-only Linux MD RAID state from `/proc/mdstat`, including array state/level, configured vs active members, health bitmap, and rebuild/resync progress when present;
+- a bounded `raid-degraded` warning only when the MD member counts or health bitmap prove degradation.
 
-These fields are derived from counter deltas over the existing five-second system-sampling interval. They are evidence about observed block-device pressure, not proof of disk failure.
+Disk-rate fields are derived from counter deltas over the existing five-second system-sampling interval. MD RAID state is read directly from the kernel's `/proc/mdstat` surface. These are host-observation signals, not proof of a physical-disk failure.
+
+The MD parser is source/test qualified against standard Linux MD formats. The attempted live DS216 SSH readback was inconclusive at the transport layer, so no claim is made yet about the NAS's current array membership or health.
 
 The same source candidate also closes several journal-durability gaps without changing the privilege model:
 

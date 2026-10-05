@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"regexp"
 	"sort"
 	"strconv"
 	"strings"
@@ -32,27 +33,39 @@ type DiskSample struct {
 	AvgQueueDepth      float64 `json:"avg_queue_depth"`
 }
 
+type RAIDArraySample struct {
+	Name                string  `json:"name"`
+	State               string  `json:"state"`
+	Level               string  `json:"level,omitempty"`
+	RaidDevices         int     `json:"raid_devices"`
+	ActiveDevices       int     `json:"active_devices"`
+	Health              string  `json:"health,omitempty"`
+	SyncAction          string  `json:"sync_action,omitempty"`
+	SyncProgressPercent float64 `json:"sync_progress_percent"`
+}
+
 type Sample struct {
-	SchemaVersion      int             `json:"schema_version"`
-	ObservedAt         time.Time       `json:"observed_at"`
-	Load1              float64         `json:"load1"`
-	Load5              float64         `json:"load5"`
-	Load15             float64         `json:"load15"`
-	CPUCores           int             `json:"cpu_cores"`
-	CPUPercent         float64         `json:"cpu_percent"`
-	IOWaitPercent      float64         `json:"io_wait_percent"`
-	MemTotalKB         uint64          `json:"mem_total_kb"`
-	MemAvailableKB     uint64          `json:"mem_available_kb"`
-	SwapTotalKB        uint64          `json:"swap_total_kb"`
-	SwapUsedKB         uint64          `json:"swap_used_kb"`
-	SwapInPagesPerSec  float64         `json:"swap_in_pages_per_sec"`
-	SwapOutPagesPerSec float64         `json:"swap_out_pages_per_sec"`
-	MajorFaultsPerSec  float64         `json:"major_faults_per_sec"`
-	DiskReadBPS        float64         `json:"disk_read_bytes_per_sec"`
-	DiskWriteBPS       float64         `json:"disk_write_bytes_per_sec"`
-	PhysicalDisks      []DiskSample    `json:"physical_disks,omitempty"`
-	ProcessesRunning   int             `json:"processes_running"`
-	TopProcesses       []ProcessSample `json:"top_processes,omitempty"`
+	SchemaVersion      int               `json:"schema_version"`
+	ObservedAt         time.Time         `json:"observed_at"`
+	Load1              float64           `json:"load1"`
+	Load5              float64           `json:"load5"`
+	Load15             float64           `json:"load15"`
+	CPUCores           int               `json:"cpu_cores"`
+	CPUPercent         float64           `json:"cpu_percent"`
+	IOWaitPercent      float64           `json:"io_wait_percent"`
+	MemTotalKB         uint64            `json:"mem_total_kb"`
+	MemAvailableKB     uint64            `json:"mem_available_kb"`
+	SwapTotalKB        uint64            `json:"swap_total_kb"`
+	SwapUsedKB         uint64            `json:"swap_used_kb"`
+	SwapInPagesPerSec  float64           `json:"swap_in_pages_per_sec"`
+	SwapOutPagesPerSec float64           `json:"swap_out_pages_per_sec"`
+	MajorFaultsPerSec  float64           `json:"major_faults_per_sec"`
+	DiskReadBPS        float64           `json:"disk_read_bytes_per_sec"`
+	DiskWriteBPS       float64           `json:"disk_write_bytes_per_sec"`
+	PhysicalDisks      []DiskSample      `json:"physical_disks,omitempty"`
+	RAIDArrays         []RAIDArraySample `json:"raid_arrays,omitempty"`
+	ProcessesRunning   int               `json:"processes_running"`
+	TopProcesses       []ProcessSample   `json:"top_processes,omitempty"`
 }
 
 type Finding struct {
@@ -155,6 +168,11 @@ func (s *Sampler) Sample(now time.Time) (Sample, error) {
 	if err != nil && !errors.Is(err, os.ErrNotExist) {
 		errs = append(errs, err)
 	}
+	raid, err := readRAID(filepath.Join(s.ProcRoot, "mdstat"))
+	if err != nil && !errors.Is(err, os.ErrNotExist) {
+		errs = append(errs, err)
+	}
+	out.RAIDArrays = raid
 
 	elapsed := 0.0
 	if !s.prevAt.IsZero() {
@@ -402,6 +420,70 @@ func physicalDisk(name string) bool {
 	return false
 }
 
+var (
+	mdHealthRE = regexp.MustCompile(`\[(\d+)/(\d+)\]\s+\[([U_]+)\]`)
+	mdSyncRE   = regexp.MustCompile(`\b(resync|recovery|reshape|check)\s*=\s*([0-9]+(?:\.[0-9]+)?)%`)
+)
+
+func readRAID(path string) ([]RAIDArraySample, error) {
+	f, err := os.Open(path)
+	if err != nil {
+		return nil, err
+	}
+	defer f.Close()
+
+	var out []RAIDArraySample
+	current := -1
+	sc := bufio.NewScanner(f)
+	for sc.Scan() {
+		line := sc.Text()
+		trimmed := strings.TrimSpace(line)
+		if trimmed == "" || strings.HasPrefix(trimmed, "Personalities") || strings.HasPrefix(trimmed, "unused devices") {
+			continue
+		}
+		if !strings.HasPrefix(line, " ") && strings.Contains(line, " : ") {
+			parts := strings.SplitN(line, " : ", 2)
+			fields := strings.Fields(parts[1])
+			if len(fields) == 0 {
+				current = -1
+				continue
+			}
+			array := RAIDArraySample{Name: strings.TrimSpace(parts[0]), State: fields[0]}
+			if len(fields) > 1 && raidLevel(fields[1]) {
+				array.Level = fields[1]
+			}
+			out = append(out, array)
+			current = len(out) - 1
+			continue
+		}
+		if current < 0 {
+			continue
+		}
+		if match := mdHealthRE.FindStringSubmatch(trimmed); len(match) == 4 {
+			out[current].RaidDevices, _ = strconv.Atoi(match[1])
+			out[current].ActiveDevices, _ = strconv.Atoi(match[2])
+			out[current].Health = match[3]
+		}
+		if match := mdSyncRE.FindStringSubmatch(trimmed); len(match) == 3 {
+			out[current].SyncAction = match[1]
+			out[current].SyncProgressPercent, _ = strconv.ParseFloat(match[2], 64)
+		}
+	}
+	return out, sc.Err()
+}
+
+func raidLevel(raw string) bool {
+	if strings.HasPrefix(raw, "raid") {
+		return true
+	}
+	switch raw {
+	case "linear", "multipath", "faulty":
+		return true
+	default:
+		return false
+	}
+}
+
 func readVM(path string) (vmCounters, error) {
 	f, err := os.Open(path)
 	if err != nil {
@@ -582,6 +664,20 @@ func Diagnose(s Sample) []Finding {
 	}
 	if s.MajorFaultsPerSec >= 25 {
 		out = append(out, Finding{Code: "major-faults", Severity: "warning", ObservedAt: s.ObservedAt, Summary: "Processes are faulting pages from storage at a high rate.", Evidence: fmt.Sprintf("%.1f major faults/s", s.MajorFaultsPerSec)})
+	}
+	for _, array := range s.RAIDArrays {
+		degraded := strings.Contains(array.Health, "_")
+		if array.RaidDevices > 0 && array.ActiveDevices < array.RaidDevices {
+			degraded = true
+		}
+		if !degraded {
+			continue
+		}
+		evidence := fmt.Sprintf("%s %s %s %d/%d %s", array.Name, array.State, array.Level, array.ActiveDevices, array.RaidDevices, array.Health)
+		if array.SyncAction != "" {
+			evidence += fmt.Sprintf("; %s %.1f%%", array.SyncAction, array.SyncProgressPercent)
+		}
+		out = append(out, Finding{Code: "raid-degraded", Severity: "warning", ObservedAt: s.ObservedAt, Summary: "A Linux MD RAID array is degraded.", Evidence: strings.TrimSpace(evidence)})
 	}
 	return out
 }
