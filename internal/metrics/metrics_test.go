@@ -68,6 +68,36 @@ func TestSamplerAndDiagnose(t *testing.T) {
 	}
 }
 
+func TestDiagnoseCPUAndBlockedLoadFindings(t *testing.T) {
+	cases := []struct {
+		name   string
+		sample Sample
+		want   string
+	}{
+		{
+			name:   "cpu saturation",
+			sample: Sample{CPUCores: 2, CPUPercent: 95, Load1: 2.0},
+			want:   "cpu-saturation",
+		},
+		{
+			name:   "blocked load",
+			sample: Sample{CPUCores: 2, CPUPercent: 50, Load1: 4.0},
+			want:   "blocked-load",
+		},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			findings := Diagnose(tc.sample)
+			for _, finding := range findings {
+				if finding.Code == tc.want {
+					return
+				}
+			}
+			t.Fatalf("missing finding %q in %+v", tc.want, findings)
+		})
+	}
+}
+
 func TestPhysicalDiskLatencyUtilizationAndQueue(t *testing.T) {
 	root := t.TempDir()
 	writeFixture(t, root, 100, 200, 10, 20, 100, 1000, 2000, 20, 10)

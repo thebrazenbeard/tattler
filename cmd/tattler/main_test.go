@@ -47,6 +47,57 @@ func TestNewUIStateRestoresPersistedEvents(t *testing.T) {
 	}
 }
 
+func TestDecorateDirectionPersistsIntoEvents(t *testing.T) {
+	localAddr := netip.MustParseAddr("192.168.1.187")
+	cases := []struct {
+		name      string
+		localPort uint16
+		listeners []model.Connection
+		want      string
+	}{
+		{
+			name:      "inbound",
+			localPort: 8080,
+			listeners: []model.Connection{{
+				Protocol: "tcp",
+				Local:    netip.MustParseAddrPort("0.0.0.0:8080"),
+				State:    "LISTEN",
+			}},
+			want: "inbound",
+		},
+		{
+			name:      "outbound",
+			localPort: 55000,
+			want:      "outbound",
+		},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			conn := model.Connection{
+				Protocol: "tcp",
+				Local:    netip.AddrPortFrom(localAddr, tc.localPort),
+				Remote:   netip.MustParseAddrPort("1.2.3.4:443"),
+				State:    "ESTABLISHED",
+				Inode:    9001,
+			}
+			got := decorate(
+				procnet.Snapshot{Listeners: tc.listeners, Connections: []model.Connection{conn}},
+				t.TempDir(),
+				nil,
+				map[netip.Addr]struct{}{localAddr: {}},
+				map[uint64]model.ProcessInfo{},
+			)
+			if len(got) != 1 || got[0].Direction != tc.want {
+				t.Fatalf("connections=%+v want direction=%q", got, tc.want)
+			}
+			ev := model.NewEvent(time.Date(2026, 10, 4, 23, 0, 0, 0, time.UTC), "test-host", "open", "proc-sampler", got[0])
+			if ev.Connection.Direction != tc.want {
+				t.Fatalf("event direction=%q want=%q", ev.Connection.Direction, tc.want)
+			}
+		})
+	}
+}
+
 func TestDecorateAddsOwnerWithoutInventingProcess(t *testing.T) {
 	conn := model.Connection{
 		Protocol: "tcp",

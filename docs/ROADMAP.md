@@ -23,6 +23,8 @@ Qualification gates before calling the SPK runtime-ready:
 
 Source status for the journal portion of this gate: restart restoration, bounded recent-history recovery, rotation error propagation/rollback, close-flush error reporting, and interrupted-rotation recovery-file visibility are implemented and exact-head CI qualified in the `0.2.0-0001` candidate. They are **not** yet DS216 runtime-qualified; the live NAS remains on `0.1.0-0007`.
 
+Controlled source fixtures now explicitly cover CPU saturation, blocked-load behavior, memory pressure, swap churn, I/O wait, major faults, and both inbound/outbound TCP direction carried into emitted connection events. Live DS216 behavioral qualification remains a separate gate.
+
 ## V0.2 — storage and DSM evidence
 
 Source candidate `0.2.0-0001` implements the first storage-evidence slice from already-readable `/proc/diskstats`: per-physical-disk throughput, IOPS, average completion latency, utilization, and weighted queue depth. Existing `storage-wait` findings now carry the hottest disk's measured utilization/latency/queue evidence when available.
