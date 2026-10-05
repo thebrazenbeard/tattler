@@ -1,0 +1,4 @@
+psims85 ALL=(root) NOPASSWD: /usr/local/sbin/tattler-pkgctl status
+psims85 ALL=(root) NOPASSWD: /usr/local/sbin/tattler-pkgctl start
+psims85 ALL=(root) NOPASSWD: /usr/local/sbin/tattler-pkgctl stop
+psims85 ALL=(root) NOPASSWD: /usr/local/sbin/tattler-pkgctl upgrade *
