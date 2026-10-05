@@ -271,11 +271,18 @@ func readRecentFile(path string, limit int) ([]model.Event, error) {
 func (s *JSONL) Close() error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
+
+	var errs []error
 	if s.writer != nil {
-		_ = s.writer.Flush()
+		if err := s.writer.Flush(); err != nil {
+			errs = append(errs, fmt.Errorf("flush journal on close: %w", err))
+		}
 	}
 	if s.file != nil {
-		return s.file.Close()
+		if err := s.file.Close(); err != nil {
+			errs = append(errs, fmt.Errorf("close journal file: %w", err))
+		}
 	}
-	return nil
+	s.writer, s.file = nil, nil
+	return errors.Join(errs...)
 }

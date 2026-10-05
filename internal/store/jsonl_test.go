@@ -1,6 +1,8 @@
 package store
 
 import (
+	"bufio"
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -9,6 +11,26 @@ import (
 
 	"github.com/thebrazenbeard/tattler/internal/model"
 )
+
+type flushFailWriter struct{}
+
+func (flushFailWriter) Write([]byte) (int, error) {
+	return 0, errors.New("forced flush failure")
+}
+
+func TestCloseReturnsFlushFailure(t *testing.T) {
+	s, err := Open(t.TempDir(), 0, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	s.writer = bufio.NewWriterSize(flushFailWriter{}, 64)
+	if _, err := s.writer.WriteString("pending"); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.Close(); err == nil {
+		t.Fatal("Close succeeded despite buffered flush failure")
+	}
+}
 
 func TestReadRecentRestoresEventsAcrossRotation(t *testing.T) {
 	dir := t.TempDir()
