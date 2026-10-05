@@ -72,7 +72,17 @@ Source candidate `0.2.0-0001` adds per-physical-disk evidence from Linux `/proc/
 
 These fields are derived from counter deltas over the existing five-second system-sampling interval. They are evidence about observed block-device pressure, not proof of disk failure.
 
-`0.2.0-0001` is currently **SOURCE/BUILD/PACKAGE VERIFIED ONLY**. The live DS216 remains on runtime-qualified `0.1.0-0007` until a separate install/upgrade is explicitly authorized and read back.
+The same source candidate also closes several journal-durability gaps without changing the privilege model:
+
+- retained connection events are restored into `/api/v1/events` after daemon restart;
+- startup reads newest journal generations first and stops once the bounded recent-event window is full;
+- rotation errors are surfaced instead of discarded, with rollback/reopen behavior to preserve the live journal on failed rotation;
+- final buffered-write failures are returned by `Close()` instead of being silently ignored;
+- an interrupted rotation's preserved `.rotate-oldest` events remain visible to the recovery reader when newer retained generations do not fill the requested window.
+
+A leftover `.rotate-oldest` still blocks later rotation rather than being guessed away automatically. That is intentional fail-closed behavior: the source preserves ambiguous recovery evidence instead of deleting it without enough state to prove the prior rotation completed.
+
+`0.2.0-0001` is currently **SOURCE/BUILD/PACKAGE/EXACT-HEAD-CI VERIFIED ONLY**. The live DS216 remains on runtime-qualified `0.1.0-0007` until a separate install/upgrade is explicitly authorized and read back.
 
 ## Native DSM updates
 
@@ -132,7 +142,7 @@ Current live runtime subject `0.1.0-0007`:
 
 Current source/package candidate `0.2.0-0001`:
 
-`DISK_PRESSURE_EVIDENCE_IMPLEMENTED / LOCAL_TEST_VET_PASS / DETERMINISTIC_ARMV7_BUILD_PASS / DETERMINISTIC_SPK_PASS / INDEPENDENT_DSM_7_2_2_VERIFY_PASS / NOT_PUBLISHED / NOT_INSTALLED / RUNTIME_NOT_QUALIFIED`
+`DISK_PRESSURE_EVIDENCE_IMPLEMENTED / RESTART_EVENT_RESTORE_IMPLEMENTED / BOUNDED_HISTORY_SCAN / ROTATION_FAILURE_SAFE / CLOSE_FLUSH_ERRORS_SURFACED / RECOVERY_FILE_VISIBLE / LOCAL_TEST_VET_PASS / DETERMINISTIC_ARMV7_BUILD_PASS / DETERMINISTIC_SPK_PASS / INDEPENDENT_DSM_7_2_2_VERIFY_PASS / EXACT_HEAD_CI_PASS / CI_PACKAGE_SOURCE_BOUND / NOT_INSTALLED / RUNTIME_NOT_QUALIFIED`
 
 Direct DSM readback after the native upgrade observed:
 - installed version `0.1.0-0007`, architecture `armada38x`;
