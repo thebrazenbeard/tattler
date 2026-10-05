@@ -77,26 +77,111 @@ func (s *JSONL) Append(events []model.Event) error {
 
 func (s *JSONL) rotate() error {
 	if s.writer != nil {
-		_ = s.writer.Flush()
+		if err := s.writer.Flush(); err != nil {
+			return fmt.Errorf("flush journal before rotation: %w", err)
+		}
 	}
 	if s.file != nil {
-		_ = s.file.Close()
+		f := s.file
+		s.file, s.writer = nil, nil
+		if err := f.Close(); err != nil {
+			if reopenErr := s.open(); reopenErr != nil {
+				return errors.Join(
+					fmt.Errorf("close journal before rotation: %w", err),
+					fmt.Errorf("reopen journal after close failure: %w", reopenErr),
+				)
+			}
+			return fmt.Errorf("close journal before rotation: %w", err)
+		}
 	}
+
+	reopenAfterFailure := func(cause error) error {
+		if reopenErr := s.open(); reopenErr != nil {
+			return errors.Join(cause, fmt.Errorf("reopen journal after rotation failure: %w", reopenErr))
+		}
+		return cause
+	}
+
+	if s.keep <= 0 {
+		if err := os.Remove(s.path); err != nil && !errors.Is(err, os.ErrNotExist) {
+			return reopenAfterFailure(fmt.Errorf("remove current journal during rotation: %w", err))
+		}
+		return s.open()
+	}
+
+	type move struct {
+		from string
+		to   string
+	}
+	var moved []move
+	rollback := func(cause error, backup string, hadBackup bool) error {
+		var errs []error
+		errs = append(errs, cause)
+		for i := len(moved) - 1; i >= 0; i-- {
+			if err := os.Rename(moved[i].to, moved[i].from); err != nil && !errors.Is(err, os.ErrNotExist) {
+				errs = append(errs, fmt.Errorf("rollback %s -> %s: %w", filepath.Base(moved[i].to), filepath.Base(moved[i].from), err))
+			}
+		}
+		if hadBackup {
+			oldest := fmt.Sprintf("%s.%d", s.path, s.keep)
+			if err := os.Rename(backup, oldest); err != nil {
+				errs = append(errs, fmt.Errorf("restore oldest journal after failed rotation: %w", err))
+			}
+		}
+		if reopenErr := s.open(); reopenErr != nil {
+			errs = append(errs, fmt.Errorf("reopen journal after failed rotation: %w", reopenErr))
+		}
+		return errors.Join(errs...)
+	}
+
+	backup := s.path + ".rotate-oldest"
+	if _, err := os.Stat(backup); err == nil {
+		return reopenAfterFailure(fmt.Errorf("rotation recovery file already exists: %s", filepath.Base(backup)))
+	} else if !errors.Is(err, os.ErrNotExist) {
+		return reopenAfterFailure(fmt.Errorf("inspect rotation recovery file: %w", err))
+	}
+
+	oldest := fmt.Sprintf("%s.%d", s.path, s.keep)
+	hadBackup := false
+	if info, err := os.Stat(oldest); err == nil {
+		if !info.Mode().IsRegular() {
+			return reopenAfterFailure(fmt.Errorf("oldest journal path is not a regular file: %s", filepath.Base(oldest)))
+		}
+		if err := os.Rename(oldest, backup); err != nil {
+			return reopenAfterFailure(fmt.Errorf("stage oldest journal for rotation: %w", err))
+		}
+		hadBackup = true
+	} else if !errors.Is(err, os.ErrNotExist) {
+		return reopenAfterFailure(fmt.Errorf("inspect oldest journal before rotation: %w", err))
+	}
+
 	for i := s.keep - 1; i >= 1; i-- {
 		old := fmt.Sprintf("%s.%d", s.path, i)
 		next := fmt.Sprintf("%s.%d", s.path, i+1)
-		if i+1 > s.keep {
-			_ = os.Remove(old)
-			continue
+		if err := os.Rename(old, next); err != nil {
+			if errors.Is(err, os.ErrNotExist) {
+				continue
+			}
+			return rollback(fmt.Errorf("rotate %s -> %s: %w", filepath.Base(old), filepath.Base(next), err), backup, hadBackup)
 		}
-		_ = os.Rename(old, next)
+		moved = append(moved, move{from: old, to: next})
 	}
-	if s.keep > 0 {
-		_ = os.Rename(s.path, s.path+".1")
-	} else {
-		_ = os.Remove(s.path)
+
+	first := s.path + ".1"
+	if err := os.Rename(s.path, first); err != nil {
+		return rollback(fmt.Errorf("rotate current journal -> %s: %w", filepath.Base(first), err), backup, hadBackup)
 	}
-	return s.open()
+	moved = append(moved, move{from: s.path, to: first})
+
+	if err := s.open(); err != nil {
+		return rollback(fmt.Errorf("open new journal after rotation: %w", err), backup, hadBackup)
+	}
+	if hadBackup {
+		if err := os.Remove(backup); err != nil {
+			return fmt.Errorf("remove staged oldest journal after rotation: %w", err)
+		}
+	}
+	return nil
 }
 
 func ReadRecent(dir string, keep, limit int) ([]model.Event, error) {
