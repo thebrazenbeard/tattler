@@ -81,3 +81,33 @@ func TestStartAgentMissingSiblingReportsActionableError(t *testing.T) {
 		t.Fatalf("error=%q, want expected filename", state.Error)
 	}
 }
+
+func TestStartAgentRestartsUnhealthyManagedChild(t *testing.T) {
+	ready := false
+	stale := &fakeProcess{pid: 41}
+	fresh := &fakeProcess{pid: 42}
+	launches := 0
+
+	app := newApp("http://127.0.0.1:9147", func() bool { return ready }, func(string, ...string) (managedProcess, error) {
+		launches++
+		ready = true
+		return fresh, nil
+	}, func() (string, error) {
+		return `C:\Tools\tattler-desktop-windows-amd64.exe`, nil
+	}, func() (string, error) {
+		return t.TempDir(), nil
+	})
+	app.child = stale
+
+	state := app.StartAgent()
+
+	if !stale.killed {
+		t.Fatal("stale managed child was not cleared before restart")
+	}
+	if launches != 1 {
+		t.Fatalf("launches=%d, want 1", launches)
+	}
+	if !state.Running || !state.Managed || state.PID != 42 {
+		t.Fatalf("state=%+v, want fresh managed running pid 42", state)
+	}
+}

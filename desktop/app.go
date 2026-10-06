@@ -102,7 +102,11 @@ func (a *App) StartAgent() AgentState {
 		if a.child != nil { return AgentState{Running: true, Managed: true, PID: a.child.PID()} }
 		return AgentState{Running: true}
 	}
-	if a.child != nil { return AgentState{Managed: true, PID: a.child.PID(), Error: "agent not ready"} }
+	if a.child != nil {
+		stale := a.child
+		a.child = nil
+		_ = stale.Kill()
+	}
 
 	exe, err := a.executable()
 	if err != nil { return AgentState{Error: err.Error()} }
