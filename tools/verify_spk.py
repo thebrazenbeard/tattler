@@ -62,6 +62,35 @@ def verify_privilege(raw: bytes) -> None:
     if privilege != expected:
         raise ValueError(f"privilege must be exactly package-user only: {privilege!r}")
 
+
+def verify_service_script(raw: bytes) -> None:
+    text = raw.decode("utf-8")
+    required = (
+        "--listen 127.0.0.1:9147",
+        "/proc/$pid/exe",
+        "readlink -f",
+        "0100007F:23BB",
+        "/proc/net/tcp",
+        "health_ready",
+        "MAX_LOG_BYTES=",
+        'PIDTMP="${PIDFILE}.tmp.$$"',
+        'mv -f "$PIDTMP" "$PIDFILE"',
+    )
+    for value in required:
+        if value not in text:
+            raise ValueError(f"start-stop-status missing lifecycle invariant: {value!r}")
+    lowered = text.lower()
+    for forbidden in ("sudo ", "synosystemctl", "setcap ", "chmod u+s", "run-as=root"):
+        if forbidden in lowered:
+            raise ValueError(f"start-stop-status requests forbidden privilege behavior: {forbidden!r}")
+
+
+def verify_state_hook(raw: bytes, name: str) -> None:
+    text = raw.decode("utf-8")
+    for value in ("SYNOPKG_PKGVAR", 'mkdir -p "$STATE_DIR"', 'chmod 700 "$STATE_DIR"', "umask 077"):
+        if value not in text:
+            raise ValueError(f"{name} missing state-directory invariant: {value!r}")
+
 def parse_info(raw: bytes) -> dict[str, str]:
     result: dict[str, str] = {}
     for lineno, line in enumerate(raw.decode("utf-8").splitlines(), 1):
@@ -126,10 +155,16 @@ def verify(path: Path) -> dict[str, int | str]:
         icon_256 = outer.extractfile("PACKAGE_ICON_256.PNG").read()
         privilege_raw = outer.extractfile("conf/privilege").read()
         info_raw = outer.extractfile("INFO").read()
+        service_raw = outer.extractfile("scripts/start-stop-status").read()
+        postinst_raw = outer.extractfile("scripts/postinst").read()
+        postupgrade_raw = outer.extractfile("scripts/postupgrade").read()
 
     verify_png(icon_64, 64, 64, "PACKAGE_ICON.PNG")
     verify_png(icon_256, 256, 256, "PACKAGE_ICON_256.PNG")
     verify_privilege(privilege_raw)
+    verify_service_script(service_raw)
+    verify_state_hook(postinst_raw, "postinst")
+    verify_state_hook(postupgrade_raw, "postupgrade")
     info = parse_info(info_raw)
 
     with tarfile.open(fileobj=io.BytesIO(package), mode="r:gz") as inner:
