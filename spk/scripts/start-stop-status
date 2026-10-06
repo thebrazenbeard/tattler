@@ -2,21 +2,78 @@
 set -eu
 
 PIDFILE="${SYNOPKG_PKGVAR}/tattler.pid"
+PIDTMP="${PIDFILE}.tmp.$$"
 STATE_DIR="${SYNOPKG_PKGVAR}/state"
 LOGFILE="${SYNOPKG_PKGVAR}/tattler.log"
+LOGFILE_OLD="${LOGFILE}.1"
 BIN="${SYNOPKG_PKGDEST}/bin/tattler"
+MAX_LOG_BYTES=4194304
 
-is_running() {
+read_pid() {
     [ -f "$PIDFILE" ] || return 1
     pid="$(cat "$PIDFILE" 2>/dev/null || true)"
-    [ -n "$pid" ] || return 1
-    kill -0 "$pid" 2>/dev/null
+    case "$pid" in
+        ''|*[!0-9]*) return 1 ;;
+    esac
+    printf '%s\n' "$pid"
+}
+
+bin_real() {
+    readlink -f "$BIN" 2>/dev/null || printf '%s\n' "$BIN"
+}
+
+is_running() {
+    pid="$(read_pid)" || return 1
+    kill -0 "$pid" 2>/dev/null || return 1
+    exe="$(readlink -f "/proc/$pid/exe" 2>/dev/null || true)"
+    [ -n "$exe" ] || return 1
+    BIN_REAL="$(bin_real)"
+    [ "$exe" = "$BIN_REAL" ]
+}
+
+is_listening() {
+    [ -r /proc/net/tcp ] || return 1
+    awk '$2 == "0100007F:23BB" && $4 == "0A" { found=1 } END { exit(found ? 0 : 1) }' /proc/net/tcp
+}
+
+health_ready() {
+    is_running && is_listening
+}
+
+stop_owned() {
+    if ! is_running; then
+        rm -f "$PIDFILE" "$PIDTMP"
+        return 0
+    fi
+    pid="$(read_pid)"
+    kill -TERM "$pid" 2>/dev/null || true
+    i=0
+    while is_running && [ "$i" -lt 10 ]; do
+        sleep 1
+        i=$((i+1))
+    done
+    if is_running; then
+        kill -KILL "$pid" 2>/dev/null || true
+    fi
+    rm -f "$PIDFILE" "$PIDTMP"
+}
+
+rotate_log() {
+    [ -f "$LOGFILE" ] || return 0
+    size="$(wc -c <"$LOGFILE" 2>/dev/null | awk '{print $1}' || true)"
+    case "$size" in
+        ''|*[!0-9]*) size=0 ;;
+    esac
+    if [ "$size" -ge "$MAX_LOG_BYTES" ]; then
+        rm -f "$LOGFILE_OLD"
+        mv -f "$LOGFILE" "$LOGFILE_OLD"
+    fi
 }
 
 report_start_failure() {
     if [ -n "${SYNOPKG_TEMP_LOGFILE:-}" ]; then
         {
-            echo "Tattler failed to start."
+            echo "Tattler failed to become healthy on 127.0.0.1:9147."
             if [ -r "$LOGFILE" ]; then
                 echo
                 echo "Last Tattler log lines:"
@@ -34,48 +91,60 @@ case "${1:-}" in
             [ -z "${SYNOPKG_TEMP_LOGFILE:-}" ] || echo "Tattler executable is missing or not executable: $BIN" >"$SYNOPKG_TEMP_LOGFILE"
             exit 1
         }
+        [ -r /proc/net/tcp ] || {
+            [ -z "${SYNOPKG_TEMP_LOGFILE:-}" ] || echo "Tattler cannot read /proc/net/tcp" >"$SYNOPKG_TEMP_LOGFILE"
+            exit 1
+        }
         exit 0
         ;;
     prestop)
         exit 0
         ;;
     start)
-        if is_running; then exit 0; fi
-        umask 077
-        mkdir -p "$STATE_DIR"
-        nohup "$BIN" --listen 127.0.0.1:9147 --state-dir "$STATE_DIR" --poll 1s --metrics-interval 5s >>"$LOGFILE" 2>&1 &
-        echo "$!" >"$PIDFILE"
-        sleep 1
-        if is_running; then
+        if health_ready; then
             exit 0
         fi
-        rm -f "$PIDFILE"
+        if is_running; then
+            stop_owned
+        else
+            rm -f "$PIDFILE" "$PIDTMP"
+        fi
+
+        umask 077
+        mkdir -p "$STATE_DIR"
+        chmod 700 "$STATE_DIR"
+        rotate_log
+
+        nohup "$BIN" --listen 127.0.0.1:9147 --state-dir "$STATE_DIR" --poll 1s --metrics-interval 5s >>"$LOGFILE" 2>&1 &
+        child="$!"
+        printf '%s\n' "$child" >"$PIDTMP"
+        mv -f "$PIDTMP" "$PIDFILE"
+
+        i=0
+        while [ "$i" -lt 10 ]; do
+            if health_ready; then
+                exit 0
+            fi
+            if ! is_running; then
+                break
+            fi
+            sleep 1
+            i=$((i+1))
+        done
+
+        stop_owned
         report_start_failure
         exit 1
         ;;
     stop)
-        if ! is_running; then
-            rm -f "$PIDFILE"
-            exit 0
-        fi
-        pid="$(cat "$PIDFILE")"
-        kill -TERM "$pid" 2>/dev/null || true
-        i=0
-        while kill -0 "$pid" 2>/dev/null && [ "$i" -lt 10 ]; do
-            sleep 1
-            i=$((i+1))
-        done
-        if kill -0 "$pid" 2>/dev/null; then
-            kill -KILL "$pid" 2>/dev/null || true
-        fi
-        rm -f "$PIDFILE"
+        stop_owned
         exit 0
         ;;
     status)
-        if is_running; then
+        if health_ready; then
             exit 0
         fi
-        if [ -f "$PIDFILE" ]; then
+        if is_running || [ -f "$PIDFILE" ]; then
             exit 1
         fi
         exit 3

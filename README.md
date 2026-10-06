@@ -144,7 +144,7 @@ The same source candidate also closes several journal-durability gaps without ch
 
 A leftover `.rotate-oldest` still blocks later rotation rather than being guessed away automatically. That is intentional fail-closed behavior: the source preserves ambiguous recovery evidence instead of deleting it without enough state to prove the prior rotation completed.
 
-`0.2.0-0001` was the prior SOURCE/BUILD/PACKAGE/EXACT-HEAD-CI-qualified candidate. The current branch advances the package candidate to `0.2.0-0002` because the shared binary changed for native Windows support. The live DS216 remains on runtime-qualified `0.1.0-0007` until a separate install/upgrade is explicitly authorized and read back.
+`0.2.0-0001` was the prior SOURCE/BUILD/PACKAGE/EXACT-HEAD-CI-qualified candidate. `0.2.0-0002` added the shared Windows/native-observation work. The current package revision is `0.2.0-0003`, which hardens DSM service lifecycle behavior without changing the package-user privilege model. The live DS216 remains on runtime-qualified `0.1.0-0007` until a separate install/upgrade is explicitly authorized and read back.
 
 ## Native DSM updates
 
@@ -158,6 +158,21 @@ The SPK declares:
 The repository contains `package-source/`, a DSM package-source endpoint serving compatible `armada38x` hosts at DSM build `72806` or newer. The release manifest is derived from the finished SPK, and CI requires the published SPK to equal the deterministic CI artifact byte-for-byte.
 
 The live DSM Package Source is already registered on the DS216 as `Tattler`.
+
+### DSM package lifecycle revision 0.2.0-0003
+
+The `0.2.0-0003` SPK improves package behavior without requesting additional privilege:
+
+- validates that a PID file still identifies the installed Tattler binary before status/stop actions trust it;
+- resolves DSM package-target symlinks before comparing process identity;
+- treats the loopback listener on `127.0.0.1:9147` as part of startup readiness;
+- waits for readiness and reports recent service-log lines when startup fails;
+- writes the PID file atomically and clears stale PID state safely;
+- rotates `tattler.log` at 4 MiB on service startup, retaining one previous generation;
+- initializes the state directory at mode `0700` and service log at mode `0600` on install/upgrade;
+- keeps `conf/privilege` package-user-only and keeps the HTTP surface loopback-only.
+
+The SPK verifier now enforces these lifecycle invariants in addition to archive safety, deterministic metadata, ARM architecture, package-user privilege, icon dimensions, payload membership, checksum, and extract-size checks.
 
 ## Performance posture
 
@@ -184,7 +199,7 @@ python tools/build_spk.py \
   --output dist/Tattler.spk
 
 python tools/verify_spk.py dist/Tattler.spk
-python -m unittest tools.release_hygiene_test tools.release_docs_test
+python -m unittest tools.release_hygiene_test tools.release_docs_test tools.spk_lifecycle_test
 python tools/release_hygiene.py --check .
 ```
 
@@ -204,11 +219,11 @@ Current live runtime subject `0.1.0-0007`:
 
 `PACKAGE_USER_ONLY / UID_OWNER_ATTRIBUTION_IMPLEMENTED / PACKAGE_SOURCE_LIVE / NATIVE_PACKAGE_CENTER_UPGRADE_PASS / LIVE_DAEMON_PASS / LOOPBACK_API_PASS / UID_OWNER_ATTRIBUTION_RUNTIME_PASS`
 
-Current source/package candidate `0.2.0-0002`:
+Current source/package candidate `0.2.0-0003`:
 
-`TYPED_TCP_SESSION_LISTENER_UDP_ENDPOINT_SOURCE / WINDOWS_TCP_UDP_OWNER_PID_SOURCE / WINDOWS_DESKTOP_COMPANION_SOURCE / DISK_PRESSURE_EVIDENCE_IMPLEMENTED / JOURNAL_RECOVERY_HARDENED / RELEASE_HYGIENE_SOURCE / PACKAGE_SOURCE_BOUND_TO_CI_ARTIFACT / EXACT_HEAD_CI_RECEIPT_RECORDED / NOT_INSTALLED_ON_DSM / DSM_RUNTIME_NOT_QUALIFIED`
+`TYPED_TCP_SESSION_LISTENER_UDP_ENDPOINT_SOURCE / WINDOWS_TCP_UDP_OWNER_PID_SOURCE / WINDOWS_DESKTOP_COMPANION_SOURCE / DISK_PRESSURE_EVIDENCE_IMPLEMENTED / JOURNAL_RECOVERY_HARDENED / DSM_PID_IDENTITY_GUARD / LOOPBACK_LISTENER_READINESS / ATOMIC_PIDFILE / BOUNDED_SERVICE_LOG / PACKAGE_STATE_MODE_0700 / PACKAGE_LOG_MODE_0600 / PACKAGE_USER_ONLY / PACKAGE_SOURCE_BOUND_TO_CI_ARTIFACT / EXACT_HEAD_CI_RECEIPT_RECORDED / NOT_INSTALLED_ON_DSM / DSM_RUNTIME_NOT_QUALIFIED`
 
-Exact source/package qualification is recorded in `docs/PUBLIC_RELEASE_QUALIFICATION_20261006.md`. Because CI qualification belongs to an exact commit, check the current PR head before treating later source changes as qualified.
+The earlier `0.2.0-0002` qualification receipt remains in `docs/PUBLIC_RELEASE_QUALIFICATION_20261006.md`. Exact source/build/package qualification for `0.2.0-0003` is recorded in `docs/PUBLIC_RELEASE_QUALIFICATION_20261006_V0003.md`. Installation/runtime claims still require separate live DS216 readback.
 
 Direct DSM readback after the native upgrade observed:
 - installed version `0.1.0-0007`, architecture `armada38x`;
