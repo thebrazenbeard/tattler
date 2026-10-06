@@ -2,10 +2,13 @@ package server
 
 import (
 	"bytes"
+	"encoding/json"
 	"net/http"
 	"net/http/httptest"
 	"strings"
 	"testing"
+
+	"github.com/thebrazenbeard/tattler/internal/model"
 )
 
 func TestIndexUsesTattlerIcon(t *testing.T) {
@@ -57,5 +60,27 @@ func TestIndexRendersUnavailableMetricsAsNA(t *testing.T) {
 	}
 	if !strings.Contains(body, "'n/a'") {
 		t.Fatal("dashboard does not render unavailable metrics as n/a")
+	}
+}
+
+func TestStatusReportsObservationCountWithCompatibilityAlias(t *testing.T) {
+	state := NewState(10)
+	state.SetCurrent([]model.Connection{
+		{Protocol: "tcp", Kind: "tcp_listener"},
+		{Protocol: "udp", Kind: "udp_endpoint"},
+	})
+	rec := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/status", nil)
+	(&Server{State: state}).Handler().ServeHTTP(rec, req)
+
+	var got map[string]any
+	if err := json.Unmarshal(rec.Body.Bytes(), &got); err != nil {
+		t.Fatal(err)
+	}
+	if got["current_observations"] != float64(2) {
+		t.Fatalf("current_observations=%v, want 2", got["current_observations"])
+	}
+	if got["current_connections"] != float64(2) {
+		t.Fatalf("current_connections=%v, want compatibility alias 2", got["current_connections"])
 	}
 }

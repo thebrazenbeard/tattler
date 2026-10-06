@@ -173,8 +173,12 @@ func newUIState(statePath string, keepLogs int) *server.State {
 }
 
 func decorate(snap procnet.Snapshot, procRoot string, owners map[uint32]string, local map[netip.Addr]struct{}, cache map[uint64]model.ProcessInfo) []model.Connection {
+	all := make([]model.Connection, 0, len(snap.Connections)+len(snap.Listeners))
+	all = append(all, snap.Connections...)
+	all = append(all, snap.Listeners...)
+
 	wanted := make(map[uint64]struct{})
-	for _, c := range snap.Connections {
+	for _, c := range all {
 		if c.Inode != 0 {
 			if _, ok := cache[c.Inode]; !ok {
 				wanted[c.Inode] = struct{}{}
@@ -184,9 +188,26 @@ func decorate(snap procnet.Snapshot, procRoot string, owners map[uint32]string, 
 	for inode, p := range procmap.Resolve(procRoot, wanted) {
 		cache[inode] = p
 	}
-	out := make([]model.Connection, 0, len(snap.Connections))
-	for _, c := range snap.Connections {
-		c.Direction = tracker.Classify(c, snap.Listeners, local)
+	out := make([]model.Connection, 0, len(all))
+	for _, c := range all {
+		if c.Kind == "" {
+			switch {
+			case strings.HasPrefix(c.Protocol, "tcp") && c.State == "LISTEN":
+				c.Kind = model.ObservationTCPListener
+			case strings.HasPrefix(c.Protocol, "tcp"):
+				c.Kind = model.ObservationTCPSession
+			case strings.HasPrefix(c.Protocol, "udp"):
+				c.Kind = model.ObservationUDPEndpoint
+			}
+		}
+		switch c.Kind {
+		case model.ObservationTCPSession:
+			c.Direction = tracker.Classify(c, snap.Listeners, local)
+		case model.ObservationTCPListener:
+			c.Direction = "listen"
+		case model.ObservationUDPEndpoint:
+			c.Direction = ""
+		}
 		if owner, ok := owners[c.UID]; ok {
 			c.Owner = owner
 		}

@@ -87,10 +87,17 @@ func TestDecorateDirectionPersistsIntoEvents(t *testing.T) {
 				map[netip.Addr]struct{}{localAddr: {}},
 				map[uint64]model.ProcessInfo{},
 			)
-			if len(got) != 1 || got[0].Direction != tc.want {
-				t.Fatalf("connections=%+v want direction=%q", got, tc.want)
+			var session *model.Connection
+			for i := range got {
+				if got[i].Remote == conn.Remote && got[i].Local == conn.Local {
+					session = &got[i]
+					break
+				}
 			}
-			ev := model.NewEvent(time.Date(2026, 10, 4, 23, 0, 0, 0, time.UTC), "test-host", "open", "proc-sampler", got[0])
+			if session == nil || session.Direction != tc.want {
+				t.Fatalf("observations=%+v want session direction=%q", got, tc.want)
+			}
+			ev := model.NewEvent(time.Date(2026, 10, 4, 23, 0, 0, 0, time.UTC), "test-host", "open", "proc-sampler", *session)
 			if ev.Connection.Direction != tc.want {
 				t.Fatalf("event direction=%q want=%q", ev.Connection.Direction, tc.want)
 			}
@@ -144,5 +151,33 @@ func TestDecoratePreservesExactProcessAndOwner(t *testing.T) {
 	}
 	if got[0].Process != exact {
 		t.Fatalf("process=%+v", got[0].Process)
+	}
+}
+
+func TestDecorateExposesListenersAndLeavesUDPDirectionUnset(t *testing.T) {
+	local := netip.MustParseAddr("127.0.0.1")
+	listener := model.Connection{Protocol: "tcp", Local: netip.MustParseAddrPort("127.0.0.1:9147"), State: "LISTEN", Inode: 11}
+	udp := model.Connection{Protocol: "udp", Local: netip.MustParseAddrPort("127.0.0.1:5353"), Remote: netip.MustParseAddrPort("0.0.0.0:0"), State: "07", Inode: 12}
+	got := decorate(procnet.Snapshot{Listeners: []model.Connection{listener}, Connections: []model.Connection{udp}}, t.TempDir(), nil, map[netip.Addr]struct{}{local: {}}, map[uint64]model.ProcessInfo{})
+	if len(got) != 2 {
+		t.Fatalf("observations=%d, want listener + udp endpoint", len(got))
+	}
+	var sawListener, sawUDP bool
+	for _, c := range got {
+		if c.State == "LISTEN" {
+			sawListener = true
+			if c.Direction != "listen" {
+				t.Fatalf("listener direction=%q, want listen", c.Direction)
+			}
+		}
+		if c.Protocol == "udp" {
+			sawUDP = true
+			if c.Direction != "" {
+				t.Fatalf("udp direction=%q, want empty", c.Direction)
+			}
+		}
+	}
+	if !sawListener || !sawUDP {
+		t.Fatalf("listener=%v udp=%v", sawListener, sawUDP)
 	}
 }

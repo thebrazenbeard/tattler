@@ -91,15 +91,16 @@ func (s *Server) status(w http.ResponseWriter, _ *http.Request) {
 		latest = &copy
 	}
 	writeJSON(w, map[string]any{
-		"schema_version":      1,
-		"started_at":          s.State.started,
-		"uptime_seconds":      int(time.Since(s.State.started).Seconds()),
-		"collector":           s.State.source,
-		"current_connections": len(s.State.current),
-		"recent_events":       len(s.State.recent),
-		"system_samples":      len(s.State.samples),
-		"active_findings":     len(s.State.findings),
-		"latest_system":       latest,
+		"schema_version":       1,
+		"started_at":           s.State.started,
+		"uptime_seconds":       int(time.Since(s.State.started).Seconds()),
+		"collector":            s.State.source,
+		"current_observations": len(s.State.current),
+		"current_connections":  len(s.State.current),
+		"recent_events":        len(s.State.recent),
+		"system_samples":       len(s.State.samples),
+		"active_findings":      len(s.State.findings),
+		"latest_system":        latest,
 	})
 }
 
@@ -178,7 +179,7 @@ th,td{padding:7px;border-bottom:1px solid #333;text-align:left}code{color:#9fe}
 <div class="card"><div>Memory available</div><div class="big" id="mem">-</div></div>
 <div class="card"><div>Load 1m</div><div class="big" id="load">-</div></div></div>
 <h2>Findings</h2><div id="findings">None</div>
-<h2>Current connections</h2><table><thead><tr><th>Direction</th><th>Process</th><th>Protocol</th><th>Local</th><th>Remote</th><th>State</th></tr></thead><tbody id="connections"></tbody></table>
+<h2>Network activity</h2><table><thead><tr><th>Kind</th><th>Direction</th><th>Process</th><th>Protocol</th><th>Local</th><th>Remote</th><th>State</th></tr></thead><tbody id="connections"></tbody></table>
 <script>
 function pct(n){return Number(n||0).toFixed(1)+'%'}
 function unavailable(s,n){return Array.isArray(s.unavailable_metrics)&&s.unavailable_metrics.includes(n)}
@@ -188,13 +189,13 @@ async function tick(){
  const cs=await fetch('/api/v1/current').then(r=>r.json());
  const fs=await fetch('/api/v1/findings').then(r=>r.json());
  const s=st.latest_system||{};
- document.getElementById('meta').textContent=(s.platform?s.platform+' | ':'')+st.collector+' | '+st.current_connections+' connections | '+st.recent_events+' connection events';
+ document.getElementById('meta').textContent=(s.platform?s.platform+' | ':'')+st.collector+' | '+(st.current_observations??st.current_connections)+' observations | '+st.recent_events+' observation events';
  document.getElementById('cpu').textContent=pct(s.cpu_percent);
  document.getElementById('iow').textContent=unavailable(s,'io_wait_percent')?'n/a':pct(s.io_wait_percent);
  document.getElementById('load').textContent=unavailable(s,'load_average')?'n/a':Number(s.load1||0).toFixed(2);
  document.getElementById('mem').textContent=s.mem_total_kb?((s.mem_available_kb/s.mem_total_kb)*100).toFixed(1)+'%':'-';
  document.getElementById('findings').innerHTML=fs.length?fs.map(f=>'<div class="finding"><b>'+esc(f.severity).toUpperCase()+': '+esc(f.summary)+'</b><br>'+esc(f.evidence)+'</div>').join(''):'None';
- document.getElementById('connections').innerHTML=cs.map(c=>'<tr><td class="'+esc(c.direction)+'">'+esc(c.direction)+'</td><td>'+esc((c.process&&c.process.name)||c.owner||'?')+((c.process&&c.process.pid)?' ('+esc(c.process.pid)+')':'')+'</td><td>'+esc(c.protocol)+'</td><td><code>'+esc(c.local)+'</code></td><td><code>'+esc(c.remote)+'</code></td><td>'+esc(c.state)+'</td></tr>').join('');
+ document.getElementById('connections').innerHTML=cs.map(c=>'<tr><td>'+esc(c.kind||'unknown')+'</td><td class="'+esc(c.direction)+'">'+esc(c.direction||'-')+'</td><td>'+esc((c.process&&c.process.name)||c.owner||'?')+((c.process&&c.process.pid)?' ('+esc(c.process.pid)+')':'')+'</td><td>'+esc(c.protocol)+'</td><td><code>'+esc(c.local)+'</code></td><td><code>'+esc((c.remote&&c.remote!=='invalid AddrPort'&&c.remote!=='0.0.0.0:0'&&c.remote!=='[::]:0')?c.remote:'-')+'</code></td><td>'+esc(c.state||'-')+'</td></tr>').join('');
 }
 tick();setInterval(tick,2000)
 </script></body></html>`)

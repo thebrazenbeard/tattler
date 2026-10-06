@@ -44,9 +44,12 @@ func Read(procRoot string) (Snapshot, error) {
 			continue
 		}
 		for _, c := range rows {
-			if strings.HasPrefix(c.Protocol, "tcp") && c.State == "LISTEN" {
+			if c.Kind == model.ObservationTCPListener {
 				out.Listeners = append(out.Listeners, c)
-			} else if c.Remote.Port() != 0 && !c.Remote.Addr().IsUnspecified() {
+				continue
+			}
+			if c.Kind == model.ObservationUDPEndpoint ||
+				(c.Remote.Port() != 0 && !c.Remote.Addr().IsUnspecified()) {
 				out.Connections = append(out.Connections, c)
 			}
 		}
@@ -80,13 +83,18 @@ func readTable(path, proto string, v6 bool) ([]model.Connection, error) {
 		uid64, _ := strconv.ParseUint(fields[7], 10, 32)
 		inode, _ := strconv.ParseUint(fields[9], 10, 64)
 		state := fields[3]
+		kind := model.ObservationUDPEndpoint
 		if strings.HasPrefix(proto, "tcp") {
 			if v, ok := tcpStates[state]; ok {
 				state = v
 			}
+			kind = model.ObservationTCPSession
+			if state == "LISTEN" {
+				kind = model.ObservationTCPListener
+			}
 		}
 		result = append(result, model.Connection{
-			Protocol: proto, Local: local, Remote: remote, State: state,
+			Kind: kind, Protocol: proto, Local: local, Remote: remote, State: state,
 			Inode: inode, UID: uint32(uid64),
 		})
 	}

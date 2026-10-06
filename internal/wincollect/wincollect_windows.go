@@ -21,6 +21,7 @@ const (
 	afInet                  = 2
 	afInet6                 = 23
 	tcpTableOwnerPIDAll     = 5
+	udpTableOwnerPID        = 1
 	errorInsufficientBuffer = 122
 	processQueryLimitedInfo = 0x1000
 )
@@ -28,6 +29,7 @@ const (
 var (
 	iphlpapi                = syscall.NewLazyDLL("iphlpapi.dll")
 	procGetExtendedTCPTable = iphlpapi.NewProc("GetExtendedTcpTable")
+	procGetExtendedUDPTable = iphlpapi.NewProc("GetExtendedUdpTable")
 	kernel32                = syscall.NewLazyDLL("kernel32.dll")
 	procOpenProcess         = kernel32.NewProc("OpenProcess")
 	procCloseHandle         = kernel32.NewProc("CloseHandle")
@@ -45,9 +47,15 @@ type Collector struct {
 func New() *Collector { return &Collector{} }
 
 func (c *Collector) Connections() ([]model.Connection, error) {
-	v4, err4 := tcp4Connections()
-	v6, err6 := tcp6Connections()
-	out := append(v4, v6...)
+	tcp4, errTCP4 := tcp4Connections()
+	tcp6, errTCP6 := tcp6Connections()
+	udp4, errUDP4 := udp4Endpoints()
+	udp6, errUDP6 := udp6Endpoints()
+	out := make([]model.Connection, 0, len(tcp4)+len(tcp6)+len(udp4)+len(udp6))
+	out = append(out, tcp4...)
+	out = append(out, tcp6...)
+	out = append(out, udp4...)
+	out = append(out, udp6...)
 	sort.Slice(out, func(i, j int) bool {
 		if out[i].Protocol != out[j].Protocol {
 			return out[i].Protocol < out[j].Protocol
@@ -57,7 +65,7 @@ func (c *Collector) Connections() ([]model.Connection, error) {
 		}
 		return out[i].Remote.String() < out[j].Remote.String()
 	})
-	return out, errors.Join(err4, err6)
+	return out, errors.Join(errTCP4, errTCP6, errUDP4, errUDP6)
 }
 
 func (c *Collector) Sample(now time.Time) (metrics.Sample, error) {
@@ -110,6 +118,17 @@ type tcp6Row struct {
 	State         uint32
 	OwningPID     uint32
 }
+type udp4Row struct {
+	LocalAddr uint32
+	LocalPort uint32
+	OwningPID uint32
+}
+type udp6Row struct {
+	LocalAddr    [16]byte
+	LocalScopeID uint32
+	LocalPort    uint32
+	OwningPID    uint32
+}
 
 func tcp4Connections() ([]model.Connection, error) {
 	buf, err := extendedTCPTable(afInet)
@@ -125,12 +144,17 @@ func tcp4Connections() ([]model.Connection, error) {
 	}
 	out := make([]model.Connection, 0, count)
 	for _, row := range rows {
-		if row.State == 2 || row.RemotePort == 0 {
+		kind := model.ObservationTCPSession
+		direction := classifyTCP4(row, rows)
+		if row.State == 2 {
+			kind = model.ObservationTCPListener
+			direction = "listen"
+		} else if row.RemotePort == 0 {
 			continue
 		}
 		local := netip.AddrPortFrom(ipv4(row.LocalAddr), networkPort(row.LocalPort))
 		remote := netip.AddrPortFrom(ipv4(row.RemoteAddr), networkPort(row.RemotePort))
-		out = append(out, connection("tcp", local, remote, row.State, row.OwningPID, classifyTCP4(row, rows)))
+		out = append(out, connection(kind, "tcp", local, remote, row.State, row.OwningPID, direction))
 	}
 	return out, nil
 }
@@ -149,14 +173,76 @@ func tcp6Connections() ([]model.Connection, error) {
 	}
 	out := make([]model.Connection, 0, count)
 	for _, row := range rows {
-		if row.State == 2 || row.RemotePort == 0 {
+		kind := model.ObservationTCPSession
+		direction := classifyTCP6(row, rows)
+		if row.State == 2 {
+			kind = model.ObservationTCPListener
+			direction = "listen"
+		} else if row.RemotePort == 0 {
 			continue
 		}
 		local := netip.AddrPortFrom(netip.AddrFrom16(row.LocalAddr), networkPort(row.LocalPort))
 		remote := netip.AddrPortFrom(netip.AddrFrom16(row.RemoteAddr), networkPort(row.RemotePort))
-		out = append(out, connection("tcp6", local, remote, row.State, row.OwningPID, classifyTCP6(row, rows)))
+		out = append(out, connection(kind, "tcp6", local, remote, row.State, row.OwningPID, direction))
 	}
 	return out, nil
+}
+
+func udp4Endpoints() ([]model.Connection, error) {
+	buf, err := extendedUDPTable(afInet)
+	if err != nil {
+		return nil, err
+	}
+	count := *(*uint32)(unsafe.Pointer(&buf[0]))
+	rowSize := unsafe.Sizeof(udp4Row{})
+	offset := alignedOffset(unsafe.Sizeof(uint32(0)), unsafe.Alignof(udp4Row{}))
+	out := make([]model.Connection, 0, count)
+	for i := uint32(0); i < count; i++ {
+		row := *(*udp4Row)(unsafe.Pointer(uintptr(unsafe.Pointer(&buf[0])) + offset + uintptr(i)*rowSize))
+		local := netip.AddrPortFrom(ipv4(row.LocalAddr), networkPort(row.LocalPort))
+		remote := netip.AddrPortFrom(netip.IPv4Unspecified(), 0)
+		out = append(out, connection(model.ObservationUDPEndpoint, "udp", local, remote, 0, row.OwningPID, ""))
+	}
+	return out, nil
+}
+
+func udp6Endpoints() ([]model.Connection, error) {
+	buf, err := extendedUDPTable(afInet6)
+	if err != nil {
+		return nil, err
+	}
+	count := *(*uint32)(unsafe.Pointer(&buf[0]))
+	rowSize := unsafe.Sizeof(udp6Row{})
+	offset := alignedOffset(unsafe.Sizeof(uint32(0)), unsafe.Alignof(udp6Row{}))
+	out := make([]model.Connection, 0, count)
+	for i := uint32(0); i < count; i++ {
+		row := *(*udp6Row)(unsafe.Pointer(uintptr(unsafe.Pointer(&buf[0])) + offset + uintptr(i)*rowSize))
+		local := netip.AddrPortFrom(netip.AddrFrom16(row.LocalAddr), networkPort(row.LocalPort))
+		remote := netip.AddrPortFrom(netip.IPv6Unspecified(), 0)
+		out = append(out, connection(model.ObservationUDPEndpoint, "udp6", local, remote, 0, row.OwningPID, ""))
+	}
+	return out, nil
+}
+
+func extendedUDPTable(af uintptr) ([]byte, error) {
+	var size uint32
+	r1, _, _ := procGetExtendedUDPTable.Call(
+		0, uintptr(unsafe.Pointer(&size)), 1, af, udpTableOwnerPID, 0,
+	)
+	if r1 != errorInsufficientBuffer {
+		if r1 == 0 && size == 0 {
+			return []byte{0, 0, 0, 0}, nil
+		}
+		return nil, syscall.Errno(r1)
+	}
+	buf := make([]byte, size)
+	r1, _, _ = procGetExtendedUDPTable.Call(
+		uintptr(unsafe.Pointer(&buf[0])), uintptr(unsafe.Pointer(&size)), 1, af, udpTableOwnerPID, 0,
+	)
+	if r1 != 0 {
+		return nil, syscall.Errno(r1)
+	}
+	return buf, nil
 }
 
 func extendedTCPTable(af uintptr) ([]byte, error) {
@@ -179,16 +265,20 @@ func extendedTCPTable(af uintptr) ([]byte, error) {
 	}
 	return buf, nil
 }
-func connection(proto string, local, remote netip.AddrPort, state, pid uint32, direction string) model.Connection {
+func connection(kind, proto string, local, remote netip.AddrPort, state, pid uint32, direction string) model.Connection {
 	p := processInfo(pid)
-	return model.Connection{
+	out := model.Connection{
+		Kind:      kind,
 		Protocol:  proto,
 		Local:     local,
 		Remote:    remote,
-		State:     tcpState(state),
 		Direction: direction,
 		Process:   p,
 	}
+	if kind != model.ObservationUDPEndpoint {
+		out.State = tcpState(state)
+	}
+	return out
 }
 
 func classifyTCP4(row tcp4Row, rows []tcp4Row) string {
