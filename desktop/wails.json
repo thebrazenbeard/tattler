@@ -1,0 +1,23 @@
+{
+  "$schema": "https://wails.io/schemas/config.v2.json",
+  "name": "Tattler",
+  "outputfilename": "tattler-desktop-windows-amd64",
+  "frontenddir": "frontend",
+  "frontend:dir": "frontend",
+  "assetdir": "frontend/dist",
+  "frontend:install": "",
+  "frontend:build": "",
+  "wailsjsdir": "frontend/wailsjs",
+  "build:dir": "build",
+  "author": {
+    "name": "Patrick Sims",
+    "email": ""
+  },
+  "info": {
+    "companyName": "Tattler",
+    "productName": "Tattler",
+    "productVersion": "0.2.0",
+    "copyright": "Copyright (c) 2026 Patrick Sims. All rights reserved.",
+    "comments": "Tattler desktop companion"
+  }
+}
