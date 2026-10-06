@@ -26,7 +26,7 @@ module.exports = function handler(req, res) {
       package: "Tattler",
       version: release.version,
       dname: "Tattler",
-      desc: "Low-overhead host diagnostics and passive connection observability for Synology DSM.",
+      desc: "Low-overhead host diagnostics and sampled network activity for Synology DSM.",
       link: `${base}/releases/${release.filename}`,
       thumbnail: [icon64],
       thumbnail_retina: [icon256, icon256],

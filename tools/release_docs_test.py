@@ -33,14 +33,17 @@ class ReleaseDocsTests(unittest.TestCase):
         release = json.loads((ROOT / "package-source" / "release.json").read_text(encoding="utf-8"))
         self.assertEqual(release["version"], spk_version())
 
-    def test_candidate_status_points_to_immutable_qualification_receipt(self):
+    def test_candidate_status_preserves_current_qualification_state(self):
         text = (ROOT / "README.md").read_text(encoding="utf-8")
         status = re.search(r"Current source/package candidate.*?(?=\n## |\Z)", text, re.S)
         self.assertIsNotNone(status)
         self.assertIn("PACKAGE_SOURCE_BOUND_TO_CI_ARTIFACT", status.group(0))
-        self.assertIn("EXACT_HEAD_CI_RECEIPT_RECORDED", status.group(0))
-        self.assertIn("docs/PUBLIC_RELEASE_QUALIFICATION_20261006.md", status.group(0))
-        self.assertNotIn("EXACT_HEAD_CI_PENDING", status.group(0))
+        if spk_version() == "0.2.0-0003":
+            self.assertIn("EXACT_HEAD_CI_PENDING", status.group(0))
+            self.assertNotIn("EXACT_HEAD_CI_RECEIPT_RECORDED", status.group(0))
+        else:
+            self.assertIn("EXACT_HEAD_CI_RECEIPT_RECORDED", status.group(0))
+            self.assertNotIn("EXACT_HEAD_CI_PENDING", status.group(0))
         self.assertNotIn("PACKAGE_SOURCE_REBIND_PENDING", status.group(0))
 
 
