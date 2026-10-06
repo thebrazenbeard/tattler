@@ -43,7 +43,8 @@ class ReleaseDocsTests(unittest.TestCase):
         self.assertIsNotNone(status)
         if spk_version() == "0.2.0-0004":
             self.assertIn("MULTIARCH_X86_64_ARMV7_ARMV8_SOURCE", status.group(0))
-            self.assertIn("PACKAGE_SOURCE_REBIND_PENDING", status.group(0))
+            self.assertIn("PACKAGE_SOURCE_BOUND_TO_CI_ARTIFACT", status.group(0))
+            self.assertNotIn("PACKAGE_SOURCE_REBIND_PENDING", status.group(0))
             self.assertIn("EXACT_HEAD_CI_PENDING", status.group(0))
             self.assertNotIn("EXACT_HEAD_CI_RECEIPT_RECORDED", status.group(0))
         elif spk_version() == "0.2.0-0003":
