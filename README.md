@@ -1,21 +1,30 @@
 # Tattler
 
-Tattler is a low-overhead host diagnostic agent built to answer a practical question:
+Tattler is a low-overhead, observation-only host diagnostic agent built to answer a practical question:
 
 > Why is this machine slow right now?
 
-The first deployment target is Synology DSM on DS216-class ARMv7 hardware. Tattler now also has a native Windows collector and Windows AMD64 executable path; the Linux/DSM and Windows backends feed the same evidence model, journal, API, and dashboard.
+The primary deployment target is Synology DSM on DS216-class ARMv7 hardware. Tattler also has a native Windows collector and Windows AMD64 agent. Linux/DSM and Windows feed the same evidence model, bounded journal, loopback API, and dashboard.
 
-## V0.1 diagnostic surface
+Tattler is source-visible proprietary software, not open source. See [LICENSE](LICENSE), [COMMERCIAL_LICENSE.md](COMMERCIAL_LICENSE.md), [NOTICE](NOTICE), [CONTRIBUTING.md](CONTRIBUTING.md), and [SECURITY.md](SECURITY.md).
 
-Tattler combines two read-only evidence streams:
+## Diagnostic surface
 
-- system/process telemetry from Linux `/proc`: CPU use, load, I/O wait, memory and swap pressure, major faults, disk throughput, and top processes by CPU/RSS/I/O;
-- host connection telemetry from `/proc/net/tcp`, `tcp6`, `udp`, and `udp6`, with best-effort exact PID attribution plus unprivileged socket-owner attribution.
+Tattler combines read-only system/process evidence with sampled network activity.
 
-The diagnosis layer emits bounded findings such as `memory-pressure`, `swap-churn`, `storage-wait`, `cpu-saturation`, `blocked-load`, and `major-faults`. Findings report the supporting measurement rather than pretending to establish a root cause the evidence cannot prove.
+On Linux/DSM, system evidence comes from kernel `/proc` interfaces and includes CPU/load, I/O wait, memory and swap pressure, major faults, physical-disk rates/latency/queue evidence, Linux MD state, and bounded top-process evidence where readable.
 
-Connection changes are persisted as versioned `open` / `close` JSONL events with host, observation time, collector source, and deterministic event IDs.
+Network observations use three explicit kinds:
+
+- `tcp_session`: a sampled non-listening TCP row with local/remote endpoints and state;
+- `tcp_listener`: a sampled local TCP listener; direction is `listen`;
+- `udp_endpoint`: a sampled bound UDP endpoint with ownership evidence when available. A UDP endpoint does not prove that a datagram was sent or received and does not establish a remote DNS, QUIC, or other UDP peer.
+
+On Linux these observations come from `/proc/net/{tcp,tcp6,udp,udp6}`. On Windows they come from IP Helper TCP/UDP OWNER_PID tables. Exact process attribution remains best-effort when the operating system cannot prove or expose it.
+
+The journal persists versioned `open` / `close` observation events. Those names mean “appeared between samples” and “disappeared between samples”; they are not claims that Tattler observed a TCP SYN/FIN, a UDP datagram, or kernel lifecycle event.
+
+The diagnosis layer emits bounded findings such as `memory-pressure`, `swap-churn`, `storage-wait`, `cpu-saturation`, `blocked-load`, and `major-faults`. Findings report supporting measurements rather than promoting sampled correlation into root-cause proof.
 
 The loopback-only dashboard/API exposes:
 
@@ -25,25 +34,23 @@ The loopback-only dashboard/API exposes:
 - `/api/v1/current`
 - `/api/v1/events`
 
-
 ## Native Windows agent
 
 The Windows backend is native; it does not depend on WSL or Linux `/proc`.
 
 Current Windows evidence uses:
 
-- `GetExtendedTcpTable` for IPv4/IPv6 TCP endpoint state and owning PID;
+- `GetExtendedTcpTable` for IPv4/IPv6 TCP sessions/listeners and owning PID;
+- `GetExtendedUdpTable` OWNER_PID tables for IPv4/IPv6 UDP endpoints and owning PID;
 - `QueryFullProcessImageNameW` for best-effort executable/name enrichment when the process handle is readable;
 - `GetSystemTimes` for host CPU utilization;
 - `GlobalMemoryStatusEx` for physical-memory totals and availability.
 
-Listener evidence from the same Windows TCP table is used to classify established sockets as inbound or outbound. Exact PID comes from the Windows endpoint table; process name/executable is left empty when Windows does not permit that enrichment.
+TCP listener evidence is retained as `tcp_listener` and also supports inbound/outbound classification of sampled `tcp_session` rows. UDP rows are `udp_endpoint` observations with no invented remote peer or direction.
 
-Windows does not silently reinterpret Linux-only measurements. The API reports these as `unavailable_metrics` until a native equivalent is implemented and qualified: load average, Linux I/O wait, swap activity, major faults, disk throughput/latency, and RAID state.
+Windows does not silently reinterpret Linux-only measurements. The API reports these as `unavailable_metrics` until a native equivalent is implemented and qualified: load average, Linux I/O wait, swap activity, major faults, disk throughput/latency, and RAID state. ETW, packet capture, per-process Windows CPU/I/O sampling, and native disk-latency telemetry are not claimed by this release.
 
-Windows UDP endpoint capture, ETW tracing, per-process CPU/I/O sampling, and native disk-latency telemetry are not claimed by this first Windows backend. Those remain separate follow-on evidence surfaces rather than being inferred from TCP or host-level counters.
-
-Build and run on Windows:
+Build and run the Windows agent:
 
 ```powershell
 go test ./...
@@ -55,7 +62,24 @@ go build -trimpath -buildvcs=false -ldflags="-s -w -buildid=" -o dist/tattler-wi
 # Dashboard: http://127.0.0.1:9147/
 ```
 
-CI builds the Windows binary twice, requires byte-identical SHA-256 output, performs a native loopback API smoke test, and publishes `tattler-windows-amd64.exe` as a workflow artifact.
+## Windows desktop companion
+
+The separate `desktop/` Wails v2.14.0 module is a local companion, not a second telemetry collector. It consumes the agent's loopback API and shows host status, findings, and typed network observations.
+
+At startup it attaches to an already-running loopback agent when available. If it launches a sibling Tattler agent itself, it tracks ownership and may stop only that child on shutdown; it does not terminate an externally started agent.
+
+Build it on Windows:
+
+```powershell
+cd desktop
+go test ./...
+go vet ./...
+go install github.com/wailsapp/wails/v2/cmd/wails@v2.14.0
+& (Join-Path (go env GOPATH) "bin\wails.exe") build -clean -platform windows/amd64 -trimpath -webview2 browser
+```
+
+CI qualifies and publishes the Windows agent and desktop companion as separate workflow artifacts. Building either artifact does not install or activate it.
+
 
 ## DSM privilege model
 
@@ -135,13 +159,13 @@ The live DSM Package Source is already registered on the DS216 as `Tattler`.
 
 ## Performance posture
 
-The DS216 has a very small resource budget. Connection sampling defaults to 1 second, while the more expensive system/process scan defaults to 5 seconds. The runtime has no third-party Go dependencies.
+The DS216 has a very small resource budget. Network observation sampling defaults to 1 second, while the more expensive system/process scan defaults to 5 seconds. The root agent has no third-party Go dependencies; Wails dependencies are isolated to the optional `desktop/` module.
 
 ## Evidence ceiling
 
-V0.1 is a sampling diagnostic agent, not a packet sniffer or kernel tracing engine. Very short connections can occur between samples. Unconnected inbound UDP is not represented as a connection. Exact PID attribution can race process exit or be blocked by permissions. UID/account ownership is weaker than exact PID attribution and is reported separately.
+Tattler is a sampling diagnostic agent, not a packet sniffer or kernel tracing engine. Very short TCP sessions or endpoint changes can occur between samples. A retained UDP endpoint proves that the operating system exposed a bound endpoint during a sample; it does not prove datagram traffic, a remote peer, DNS activity, or QUIC activity.
 
-Linux namespaces and NAT can also limit what the host view proves.
+Exact PID/process attribution can race process exit or be blocked by permissions. UID/account ownership is weaker than exact PID attribution and is reported separately. Linux namespaces and NAT can also limit what the host view proves. Windows IP Helper endpoint tables do not substitute for ETW or packet capture.
 
 ## Build and verification
 
@@ -158,9 +182,11 @@ python tools/build_spk.py \
   --output dist/Tattler.spk
 
 python tools/verify_spk.py dist/Tattler.spk
+python -m unittest tools.release_hygiene_test tools.release_docs_test
+python tools/release_hygiene.py --check .
 ```
 
-CI also runs the independent strict DSM 7.2.2 verifier from `thebrazenbeard/spk-packager@89085efb9e439dfd05f26ad56d857ef71f2d52b1`.
+CI pins Go 1.27.0 for the release candidate, builds the ARMv7 SPK deterministically, and also runs the independent strict DSM 7.2.2 verifier from `thebrazenbeard/spk-packager@89085efb9e439dfd05f26ad56d857ef71f2d52b1`.
 
 ## Status
 
@@ -178,7 +204,7 @@ Current live runtime subject `0.1.0-0007`:
 
 Current source/package candidate `0.2.0-0002`:
 
-`DISK_PRESSURE_EVIDENCE_IMPLEMENTED / RESTART_EVENT_RESTORE_IMPLEMENTED / BOUNDED_HISTORY_SCAN / ROTATION_FAILURE_SAFE / CLOSE_FLUSH_ERRORS_SURFACED / RECOVERY_FILE_VISIBLE / NATIVE_WINDOWS_TCP_PID_EVIDENCE / WINDOWS_CPU_MEMORY_EVIDENCE / WINDOWS_EXECUTABLE_BUILD_PATH / DASHBOARD_BRANDING / LOCAL_WINDOWS_TEST_VET_RUNTIME_PASS / WSL2_LINUX_RUNTIME_PASS / DETERMINISTIC_ARMV7_BUILD_PASS / DETERMINISTIC_SPK_PASS / CI_PENDING_FOR_0002 / NOT_INSTALLED_ON_DSM / DSM_RUNTIME_NOT_QUALIFIED`
+`TYPED_TCP_SESSION_LISTENER_UDP_ENDPOINT_SOURCE / WINDOWS_TCP_UDP_OWNER_PID_SOURCE / WINDOWS_DESKTOP_COMPANION_SOURCE / DISK_PRESSURE_EVIDENCE_IMPLEMENTED / JOURNAL_RECOVERY_HARDENED / LOCAL_WINDOWS_ROOT_TEST_VET_PASS / LOCAL_WINDOWS_DESKTOP_TEST_VET_BUILD_PASS / RELEASE_HYGIENE_SOURCE / EXACT_HEAD_CI_PENDING / PACKAGE_SOURCE_REBIND_PENDING / NOT_INSTALLED_ON_DSM / DSM_RUNTIME_NOT_QUALIFIED`
 
 Direct DSM readback after the native upgrade observed:
 - installed version `0.1.0-0007`, architecture `armada38x`;

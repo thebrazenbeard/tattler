@@ -2,48 +2,56 @@
 
 ## V0.1 — passive DS216 diagnostic slice
 
-Implemented source target:
+Implemented and runtime-qualified on the historical DSM subject:
 
-- five-second Linux system/process telemetry for load, CPU, I/O wait, memory, swap, major faults, disk throughput, and top processes;
-- bounded evidence-bearing findings for common pressure patterns;
-- one-second `/proc/net` socket sampling with best-effort process attribution and direction classification;
-- append-only rotated connection-event JSONL;
+- Linux system/process telemetry for load, CPU, I/O wait, memory, swap, major faults, and top processes;
+- one-second sampled socket-table observations with best-effort process/owner attribution;
+- bounded evidence-bearing findings;
+- append-only rotated JSONL event history;
 - loopback-only API/dashboard;
-- static ARMv7 build and DSM 7 `armada38x` SPK scaffold.
+- static ARMv7 DSM package running as the package account.
 
-Qualification gates before calling the SPK runtime-ready:
+The live DS216 remains on `0.1.0-0007`. Later source candidates are not installed merely because they build or pass CI.
 
-- Package Center installs the exact built artifact on DS216 / DSM 7.2.
-- Service starts/stops/restarts cleanly as the package account.
-- Required `/proc` files are readable under the installed package identity.
-- Connection journal survives restart and rotates without data loss.
-- Idle CPU/RSS plus one-second socket/five-second system sampling overhead are acceptable on the 512 MB host.
-- Controlled CPU, memory, I/O-wait, swap, inbound-TCP, and outbound-TCP fixtures produce the expected measurements/findings/events.
-- Live DSM evidence confirms thresholds are useful without causing alert churn.
+## V0.2 — storage evidence, typed network observations, and Windows companion
 
-Source status for the journal portion of this gate: restart restoration, bounded recent-history recovery, rotation error propagation/rollback, close-flush error reporting, and interrupted-rotation recovery-file visibility are implemented and exact-head CI qualified in the `0.2.0-0001` candidate and carried forward into `0.2.0-0002`. They are **not** yet DS216 runtime-qualified; the live NAS remains on `0.1.0-0007`.
+Current source/package candidate: `0.2.0-0002`.
 
-Controlled source fixtures now explicitly cover CPU saturation, blocked-load behavior, memory pressure, swap churn, I/O wait, major faults, and both inbound/outbound TCP direction carried into emitted connection events. Live DS216 behavioral qualification remains a separate gate.
+Implemented in source:
 
-## V0.2 — storage and DSM evidence
+- per-physical-disk Linux evidence from `/proc/diskstats`: throughput, IOPS, average completion latency, utilization, and weighted queue depth;
+- Linux MD state from `/proc/mdstat`, including bounded degradation evidence and rebuild/resync progress;
+- restart-safe bounded event restoration plus rotation/flush failure hardening;
+- public typed network observations: `tcp_session`, `tcp_listener`, and `udp_endpoint`;
+- native Windows TCP session/listener collection with owning PID;
+- native Windows IPv4/IPv6 UDP endpoint collection with owning PID and no invented remote peer;
+- native Windows host CPU and memory evidence;
+- Windows AMD64 agent build/runtime smoke path;
+- separate Wails v2 Windows desktop companion consuming the loopback API;
+- deterministic DSM package build and strict package-source provenance gate;
+- public-release licensing, security/contribution files, and source hygiene checks.
 
-Source candidate `0.2.0-0001` introduced per-physical-disk evidence; current candidate `0.2.0-0002` carries it forward unchanged while adding native Windows support. The Linux storage slice implements per-physical-disk evidence from already-readable `/proc/diskstats`: throughput, IOPS, average completion latency, utilization, and weighted queue depth. Existing `storage-wait` findings carry the hottest disk's measured utilization/latency/queue evidence when available.
+Release qualification still requires exact-head GitHub Actions success and package-source rebinding to the exact CI-built SPK. DSM installation/runtime qualification remains separate and is not part of source acceptance.
 
-The candidate also reads standard Linux MD state from `/proc/mdstat`: array state/level, configured vs active members, health bitmap, and rebuild/resync progress. A `raid-degraded` warning is emitted only when member counts or the health bitmap prove degradation. This MD slice is source/test qualified, not yet DS216 runtime-qualified because the latest live SSH probe did not yield trustworthy output.
+Still pending later V0.2 work:
 
-Still pending later V0.2 work: DSM-specific device/volume identity, optional low-frequency SMART evidence, and any additional source-specific collectors. Keep expensive SMART polling far outside the hot path.
+- DSM-specific device/volume identity;
+- optional low-frequency SMART evidence;
+- additional source-specific storage context where it materially improves diagnosis.
 
 ## V0.3 — durable diagnostic history
 
-Persist compact downsampled system history and finding transitions without writing every raw sample. Add restart-safe retention and export so an operator can inspect the minutes preceding a stall.
+Persist compact downsampled system history and finding transitions without writing every raw sample. Add restart-safe retention/export so an operator can inspect the minutes preceding a stall.
 
-## V0.4 — higher-fidelity connection events
+## V0.4 — higher-fidelity network events
 
-Add a collector interface plus Netfilter conntrack for hosts where kernel and granted capability permit event subscription. Preserve the V1 event envelope and expose loss/overflow counters. Evaluate pcap/eBPF only on capable hosts.
+Add collector interfaces for evidence that is stronger than sampled endpoint tables. Candidate surfaces include Netfilter conntrack on capable Linux hosts and ETW on Windows. Evaluate pcap/eBPF only where platform capability and privilege policy make them appropriate.
+
+Any higher-fidelity collector must preserve provenance and loss/overflow counters. It must not silently upgrade sampled `open`/`close` events into packet or kernel-lifecycle claims.
 
 ## V0.5 — richer correlation
 
-Correlate process CPU/RSS/I/O, connection activity, storage wait, and finding windows. Add optional UID/user mapping and DNS correlation while preserving raw-vs-derived provenance.
+Correlate process CPU/RSS/I/O, typed network activity, storage wait, and finding windows. Add optional DNS correlation only with explicit raw-vs-derived provenance.
 
 ## V0.6 — multi-host view
 
@@ -51,4 +59,4 @@ Add authenticated export/aggregation as a separate surface. Local-only operation
 
 ## Non-goals unless explicitly added
 
-Tattler is not a firewall, packet-content recorder, remote administration agent, or magical root-cause oracle. A finding states the strongest conclusion supported by the sampled host evidence.
+Tattler is not a firewall, packet-content recorder, remote administration agent, or root-cause oracle. A finding states the strongest conclusion supported by the sampled host evidence.
