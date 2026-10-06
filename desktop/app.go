@@ -116,11 +116,23 @@ func (a *App) StartAgent() AgentState {
 		filepath.Join(filepath.Dir(exe), "tattler.exe"),
 	}
 	var child managedProcess
+	var lastErr error
+	missing := 0
 	for _, candidate := range candidates {
 		child, err = a.launch(candidate, "--listen", "127.0.0.1:9147", "--state-dir", stateDir)
 		if err == nil { break }
+		lastErr = err
+		if errors.Is(err, os.ErrNotExist) {
+			missing++
+		}
 	}
-	if err != nil { return AgentState{Error: err.Error()} }
+	if err != nil {
+		if missing == len(candidates) {
+			return AgentState{Error: "Tattler agent executable not found next to desktop app; expected tattler-windows-amd64.exe or tattler.exe in " + filepath.Dir(exe)}
+		}
+		if lastErr != nil { return AgentState{Error: lastErr.Error()} }
+		return AgentState{Error: "failed to start Tattler agent"}
+	}
 	a.child = child
 	for i := 0; i < 30; i++ {
 		if a.health() { return AgentState{Running: true, Managed: true, PID: child.PID()} }

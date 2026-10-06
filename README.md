@@ -78,7 +78,7 @@ go install github.com/wailsapp/wails/v2/cmd/wails@v2.14.0
 & (Join-Path (go env GOPATH) "bin\wails.exe") build -clean -platform windows/amd64 -trimpath -webview2 browser
 ```
 
-CI qualifies and publishes the Windows agent and desktop companion as separate workflow artifacts. Building either artifact does not install or activate it.
+CI qualifies and publishes the Windows agent and desktop companion as separate workflow artifacts. The desktop artifact is a bundle containing both `tattler-desktop-windows-amd64.exe` and its required sibling `tattler-windows-amd64.exe`; extract and keep those two files together. The companion launches that sibling agent when no healthy loopback agent is already running. Building either artifact does not install or activate it.
 
 
 ## DSM privilege model

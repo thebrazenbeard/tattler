@@ -23,6 +23,7 @@ th,td{text-align:left;padding:8px 10px;border-bottom:1px solid #27313b;font-size
 </head>
 <body>
 <header><div class="brand"><img src="tattler-icon.png" alt=""><div><h1>Tattler</h1><div class="sub">Local host diagnostics and network activity</div></div></div><div><span id="state" class="state">Checking…</span> <button id="start">Start agent</button></div></header>
+<div id="startError" class="error" style="display:none;margin:-10px 0 12px"></div>
 <div class="grid">
 <div class="card"><div class="label">CPU</div><div class="value" id="cpu">—</div></div>
 <div class="card"><div class="label">Memory available</div><div class="value" id="mem">—</div></div>
@@ -46,8 +47,36 @@ function render(s){
  $('current').innerHTML=(s.current||[]).map(c=>'<tr><td>'+esc(c.kind||'unknown')+'</td><td>'+esc(c.direction||'-')+'</td><td>'+esc(proc(c))+'</td><td>'+esc(c.protocol)+'</td><td><code>'+esc(c.local)+'</code></td><td><code>'+esc(endpoint(c.remote))+'</code></td><td>'+esc(c.state||'-')+'</td></tr>').join('');
  $('events').innerHTML=(s.events||[]).slice().reverse().map(e=>{const c=e.connection||{};return '<tr><td>'+esc(e.observed_at||'')+'</td><td>'+esc(e.kind||'')+'</td><td>'+esc(c.kind||'unknown')+'</td><td><code>'+esc(c.local||'')+'</code></td><td>'+esc(proc(c))+'</td></tr>'}).join('');
 }
-async function refresh(){try{render(await window.go.main.App.Snapshot())}catch(e){$('state').textContent='Agent offline';$('state').className='state bad';$('collector').textContent='—';console.error(e)}}
-$('start').addEventListener('click',async()=>{try{await window.go.main.App.StartAgent()}finally{await refresh()}});
+let startError='';
+function setStartError(message){
+ startError=message||'';
+ $('startError').textContent=startError;
+ $('startError').style.display=startError?'block':'none';
+}
+async function refresh(){
+ try{
+  const snapshot=await window.go.main.App.Snapshot();
+  if((snapshot.agent||{}).running){setStartError('')}
+  render(snapshot);
+ }catch(e){
+  $('state').textContent=startError||'Agent offline';
+  $('state').className='state bad';
+  $('collector').textContent='—';
+  console.error(e);
+ }
+}
+$('start').addEventListener('click',async()=>{
+ const button=$('start'); button.disabled=true; button.textContent='Starting…';
+ try{
+  const result=await window.go.main.App.StartAgent();
+  setStartError(result.error||'');
+ }catch(e){
+  setStartError(String(e));
+ }finally{
+  button.disabled=false; button.textContent='Start agent';
+  await refresh();
+ }
+});
 refresh();setInterval(refresh,2000);
 </script>
 </body>
