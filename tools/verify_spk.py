@@ -21,6 +21,12 @@ EXPECTED_INNER_MODES = {
     "bin/tattler": 0o755,
 }
 
+ELF_MACHINE_BY_ARCH = {
+    "x86_64": 62,
+    "armv7": 40,
+    "armv8": 183,
+}
+
 def safe_members(tf: tarfile.TarFile) -> list[tarfile.TarInfo]:
     members = tf.getmembers()
     names = [m.name for m in members]
@@ -44,13 +50,20 @@ def verify_png(data: bytes, width: int, height: int, name: str) -> None:
     if actual != (width, height):
         raise ValueError(f"{name} must be {width}x{height}, got {actual[0]}x{actual[1]}")
 
-def verify_arm(binary: bytes, label: str) -> int:
+def verify_elf(binary: bytes, label: str, arch: str) -> int:
+    if arch not in ELF_MACHINE_BY_ARCH:
+        raise ValueError(f"unsupported package arch: {arch}")
     if len(binary) < 20 or binary[:4] != b"\x7fELF":
         raise ValueError(f"{label} is not ELF")
+    if binary[5] not in (1, 2):
+        raise ValueError(f"{label}: invalid ELF byte order marker {binary[5]}")
     endian = "<" if binary[5] == 1 else ">"
     machine = struct.unpack(endian + "H", binary[18:20])[0]
-    if machine != 40:
-        raise ValueError(f"{label} is not ARM: e_machine={machine}")
+    expected = ELF_MACHINE_BY_ARCH[arch]
+    if machine != expected:
+        raise ValueError(
+            f"{label}: package arch {arch} requires ELF e_machine={expected}, got {machine}"
+        )
     return machine
 
 def verify_privilege(raw: bytes) -> None:
@@ -112,7 +125,6 @@ def parse_info(raw: bytes) -> dict[str, str]:
 def verify_info(info: dict[str, str], package: bytes, payload_bytes: int) -> None:
     required = {
         "package": "Tattler",
-        "arch": "armada38x",
         "os_min_ver": "7.2-72806",
         "silent_upgrade": "yes",
         "auto_upgrade_from": "0.1.0-0003",
@@ -121,6 +133,10 @@ def verify_info(info: dict[str, str], package: bytes, payload_bytes: int) -> Non
         actual = info.get(key)
         if actual != expected:
             raise ValueError(f"INFO {key} must be {expected!r}, got {actual!r}")
+
+    arch = info.get("arch", "")
+    if arch not in ELF_MACHINE_BY_ARCH:
+        raise ValueError(f"INFO arch must be one of {sorted(ELF_MACHINE_BY_ARCH)}, got {arch!r}")
 
     version = info.get("version", "")
     if not re.fullmatch(r"\d+\.\d+\.\d+-\d{4}", version):
@@ -181,11 +197,12 @@ def verify(path: Path) -> dict[str, int | str]:
         main_binary = inner.extractfile("bin/tattler").read()
 
     verify_info(info, package, len(main_binary))
-    main_machine = verify_arm(main_binary, "tattler")
+    main_machine = verify_elf(main_binary, "tattler", info["arch"])
     return {
         "outer_members": len(outer_members),
         "payload_members": len(inner_members),
-        "arm_e_machine": main_machine,
+        "arch": info["arch"],
+        "elf_e_machine": main_machine,
         "package_run_as": "package",
         "privileged_tools": 0,
         "version": info["version"],

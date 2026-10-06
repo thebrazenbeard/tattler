@@ -14,20 +14,44 @@ function invoke({ query = {}, body = undefined, headers = { host: "packages.test
   });
 }
 
+function artifact(arch) {
+  return release.releases.find(item => item.arch === arch);
+}
+
 (async () => {
-  const ok = await invoke({ body: { arch: release.arch, build: String(release.min_build), language: "enu" } });
-  assert.strictEqual(ok.status, 200);
-  assert.strictEqual(ok.body.packages.length, 1);
-  assert.strictEqual(ok.body.packages[0].version, release.version);
-  assert.strictEqual(ok.body.packages[0].link, `https://packages.test/releases/${release.filename}`);
-  assert.strictEqual(ok.body.packages[0].qupgrade, true);
-  assert.strictEqual(ok.body.packages[0].md5, release.md5);
-  assert.strictEqual(ok.body.packages[0].size, release.size);
+  assert.deepStrictEqual(
+    release.releases.map(item => item.arch).sort(),
+    ["armv7", "armv8", "x86_64"]
+  );
 
-  const wrongArch = await invoke({ query: { arch: "x86_64", build: String(release.min_build) } });
-  assert.deepStrictEqual(wrongArch.body.packages, []);
+  for (const arch of ["x86_64", "armv7", "armv8"]) {
+    const item = artifact(arch);
+    const ok = await invoke({ body: { arch, build: String(release.min_build), language: "enu" } });
+    assert.strictEqual(ok.status, 200);
+    assert.strictEqual(ok.body.packages.length, 1);
+    assert.strictEqual(ok.body.packages[0].version, release.version);
+    assert.strictEqual(ok.body.packages[0].link, `https://packages.test/releases/${item.filename}`);
+    assert.strictEqual(ok.body.packages[0].qupgrade, true);
+    assert.strictEqual(ok.body.packages[0].md5, item.md5);
+    assert.strictEqual(ok.body.packages[0].size, item.size);
+  }
 
-  const oldBuild = await invoke({ body: `arch=${release.arch}&build=${release.min_build - 1}&language=enu` });
+  const aliases = [
+    ["armada38x", "armv7"],
+    ["rtd1296", "armv8"],
+    ["geminilake", "x86_64"]
+  ];
+  for (const [requested, expected] of aliases) {
+    const item = artifact(expected);
+    const ok = await invoke({ query: { arch: requested, build: String(release.min_build) } });
+    assert.strictEqual(ok.body.packages.length, 1);
+    assert.strictEqual(ok.body.packages[0].link, `https://packages.test/releases/${item.filename}`);
+  }
+
+  const unknownArch = await invoke({ query: { arch: "mystery-cpu", build: String(release.min_build) } });
+  assert.deepStrictEqual(unknownArch.body.packages, []);
+
+  const oldBuild = await invoke({ body: `arch=armada38x&build=${release.min_build - 1}&language=enu` });
   assert.deepStrictEqual(oldBuild.body.packages, []);
 
   console.log("package source tests: PASS");

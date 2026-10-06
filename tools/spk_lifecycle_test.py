@@ -9,7 +9,7 @@ SPK = ROOT / "spk"
 class SPKLifecycleTests(unittest.TestCase):
     def test_package_revision_and_description_are_current(self):
         info = (SPK / "INFO").read_text(encoding="utf-8")
-        self.assertIn('version="0.2.0-0003"', info)
+        self.assertIn('version="0.2.0-0004"', info)
         self.assertIn("sampled network activity", info)
         self.assertNotIn("passive connection observability", info)
 

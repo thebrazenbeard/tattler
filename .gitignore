@@ -8,3 +8,7 @@ __pycache__/
 desktop/build/bin/
 desktop/frontend/wailsjs/
 desktop/build/windows/
+branch_structure.json
+temp_auto_push.bat
+temp_interactive_push.bat
+.gitignore
