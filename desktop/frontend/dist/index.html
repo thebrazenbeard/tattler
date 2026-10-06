@@ -23,6 +23,7 @@ th,td{text-align:left;padding:8px 10px;border-bottom:1px solid #27313b;font-size
 </head>
 <body>
 <header><div class="brand"><img src="tattler-icon.png" alt=""><div><h1>Tattler</h1><div class="sub">Local host diagnostics and network activity</div></div></div><div><span id="state" class="state">Checking…</span> <button id="start">Start agent</button></div></header>
+<div id="startError" class="error" style="display:none;margin:-10px 0 12px"></div>
 <div class="grid">
 <div class="card"><div class="label">CPU</div><div class="value" id="cpu">—</div></div>
 <div class="card"><div class="label">Memory available</div><div class="value" id="mem">—</div></div>
@@ -30,24 +31,54 @@ th,td{text-align:left;padding:8px 10px;border-bottom:1px solid #27313b;font-size
 <div class="card"><div class="label">Collector</div><div class="value" id="collector" style="font-size:15px">—</div></div>
 </div>
 <section><h2>Findings</h2><div id="findings" class="muted">None</div></section>
-<section><h2>Network activity</h2><div class="scroll"><table><thead><tr><th>Kind</th><th>Direction</th><th>Process</th><th>Protocol</th><th>Local</th><th>Remote</th><th>State</th></tr></thead><tbody id="current"></tbody></table></div></section>
+<section><h2>Network activity</h2><div class="scroll"><table><thead><tr><th>Kind</th><th>Direction</th><th>Process</th><th>Protocol</th><th>Local</th><th>Remote</th><th title="Continuous time Tattler has observed this live endpoint">Observed for ↓</th><th>State</th></tr></thead><tbody id="current"></tbody></table></div></section>
 <section><h2>Recent observation events</h2><div class="scroll"><table><thead><tr><th>Observed</th><th>Event</th><th>Kind</th><th>Endpoint</th><th>Process</th></tr></thead><tbody id="events"></tbody></table></div></section>
 <script>
 const $=id=>document.getElementById(id);
 const esc=v=>String(v??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 const endpoint=v=>(!v||v==='0.0.0.0:0'||v==='[::]:0'||v==='invalid AddrPort')?'-':v;
 const proc=c=>((c.process&&c.process.name)||c.owner||'?')+((c.process&&c.process.pid)?' ('+c.process.pid+')':'');
+const ageLabel=seconds=>{const n=Math.max(0,Number(seconds||0));if(n<60)return Math.floor(n)+'s';if(n<3600)return Math.floor(n/60)+'m '+Math.floor(n%60)+'s';if(n<86400)return Math.floor(n/3600)+'h '+Math.floor((n%3600)/60)+'m';return Math.floor(n/86400)+'d '+Math.floor((n%86400)/3600)+'h'};
 function render(s){
  const a=s.agent||{}; $('state').textContent=a.running?(a.managed?'Agent running • managed':'Agent running • attached'):(a.error||'Agent offline'); $('state').className='state '+(a.running?'ok':'bad');
  const st=s.status||{}, sys=st.latest_system||{}; $('cpu').textContent=Number(sys.cpu_percent||0).toFixed(1)+'%';
  $('mem').textContent=sys.mem_total_kb?((sys.mem_available_kb/sys.mem_total_kb)*100).toFixed(1)+'%':'n/a';
  $('obs').textContent=st.current_observations??st.current_connections??0; $('collector').textContent=st.collector||'—';
  const fs=s.findings||[]; $('findings').innerHTML=fs.length?fs.map(f=>'<div class="finding"><b>'+esc((f.severity||'info').toUpperCase())+': '+esc(f.summary)+'</b><br><span class="muted">'+esc(f.evidence)+'</span></div>').join(''):'<span class="muted">None</span>';
- $('current').innerHTML=(s.current||[]).map(c=>'<tr><td>'+esc(c.kind||'unknown')+'</td><td>'+esc(c.direction||'-')+'</td><td>'+esc(proc(c))+'</td><td>'+esc(c.protocol)+'</td><td><code>'+esc(c.local)+'</code></td><td><code>'+esc(endpoint(c.remote))+'</code></td><td>'+esc(c.state||'-')+'</td></tr>').join('');
+ const current=[...(s.current||[])].sort((a,b)=>Number(b.age_seconds||0)-Number(a.age_seconds||0)||String(a.local||'').localeCompare(String(b.local||''))||String(a.remote||'').localeCompare(String(b.remote||''))||String((a.process||{}).pid||'').localeCompare(String((b.process||{}).pid||'')));
+ $('current').innerHTML=current.map(c=>'<tr><td>'+esc(c.kind||'unknown')+'</td><td>'+esc(c.direction||'-')+'</td><td>'+esc(proc(c))+'</td><td>'+esc(c.protocol)+'</td><td><code>'+esc(c.local)+'</code></td><td><code>'+esc(endpoint(c.remote))+'</code></td><td>'+esc(ageLabel(c.age_seconds))+'</td><td>'+esc(c.state||'-')+'</td></tr>').join('');
  $('events').innerHTML=(s.events||[]).slice().reverse().map(e=>{const c=e.connection||{};return '<tr><td>'+esc(e.observed_at||'')+'</td><td>'+esc(e.kind||'')+'</td><td>'+esc(c.kind||'unknown')+'</td><td><code>'+esc(c.local||'')+'</code></td><td>'+esc(proc(c))+'</td></tr>'}).join('');
 }
-async function refresh(){try{render(await window.go.main.App.Snapshot())}catch(e){$('state').textContent='Agent offline';$('state').className='state bad';$('collector').textContent='—';console.error(e)}}
-$('start').addEventListener('click',async()=>{try{await window.go.main.App.StartAgent()}finally{await refresh()}});
+let startError='';
+function setStartError(message){
+ startError=message||'';
+ $('startError').textContent=startError;
+ $('startError').style.display=startError?'block':'none';
+}
+async function refresh(){
+ try{
+  const snapshot=await window.go.main.App.Snapshot();
+  if((snapshot.agent||{}).running){setStartError('')}
+  render(snapshot);
+ }catch(e){
+  $('state').textContent=startError||'Agent offline';
+  $('state').className='state bad';
+  $('collector').textContent='—';
+  console.error(e);
+ }
+}
+$('start').addEventListener('click',async()=>{
+ const button=$('start'); button.disabled=true; button.textContent='Starting…';
+ try{
+  const result=await window.go.main.App.StartAgent();
+  setStartError(result.error||'');
+ }catch(e){
+  setStartError(String(e));
+ }finally{
+  button.disabled=false; button.textContent='Start agent';
+  await refresh();
+ }
+});
 refresh();setInterval(refresh,2000);
 </script>
 </body>

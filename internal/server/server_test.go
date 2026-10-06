@@ -7,6 +7,7 @@ import (
 	"net/http/httptest"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/thebrazenbeard/tattler/internal/model"
 )
@@ -82,5 +83,46 @@ func TestStatusReportsObservationCountWithCompatibilityAlias(t *testing.T) {
 	}
 	if got["current_connections"] != float64(2) {
 		t.Fatalf("current_connections=%v, want compatibility alias 2", got["current_connections"])
+	}
+}
+
+func TestCurrentReportsFirstSeenAndLiveAge(t *testing.T) {
+	state := NewState(10)
+	first := time.Now().UTC().Add(-90 * time.Second)
+	state.SetCurrent([]model.Connection{
+		{Protocol: "tcp", Kind: model.ObservationTCPSession, FirstSeen: first},
+	})
+	rec := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/current", nil)
+	(&Server{State: state}).Handler().ServeHTTP(rec, req)
+
+	var got []map[string]any
+	if err := json.Unmarshal(rec.Body.Bytes(), &got); err != nil {
+		t.Fatal(err)
+	}
+	if len(got) != 1 {
+		t.Fatalf("current len=%d, want 1", len(got))
+	}
+	if got[0]["first_seen"] == nil {
+		t.Fatalf("first_seen missing: %v", got[0])
+	}
+	age, ok := got[0]["age_seconds"].(float64)
+	if !ok || age < 89 || age > 92 {
+		t.Fatalf("age_seconds=%v, want about 90", got[0]["age_seconds"])
+	}
+}
+
+func TestIndexSortsLiveObservationsByAgeDescending(t *testing.T) {
+	s := &Server{State: NewState(10)}
+	rec := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodGet, "/", nil)
+	s.Handler().ServeHTTP(rec, req)
+
+	body := rec.Body.String()
+	if !strings.Contains(body, "Observed for ↓") {
+		t.Fatal("dashboard missing live-age column")
+	}
+	if !strings.Contains(body, "age_seconds") || !strings.Contains(body, ".sort(") {
+		t.Fatal("dashboard does not sort current observations by live age")
 	}
 }

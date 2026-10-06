@@ -17,8 +17,8 @@ jobs:
         run: |
           go test ./...
           go vet ./...
-          python3 -m py_compile tools/build_spk.py tools/verify_spk.py tools/update_package_source.py tools/release_hygiene.py tools/release_hygiene_test.py
-          python3 -m unittest tools.release_hygiene_test
+          python3 -m py_compile tools/build_spk.py tools/verify_spk.py tools/update_package_source.py tools/release_hygiene.py tools/release_hygiene_test.py tools/desktop_package_test.py
+          python3 -m unittest tools.release_hygiene_test tools.desktop_package_test
           python3 tools/release_hygiene.py --check .
           for script in spk/scripts/*; do sh -n "$script"; done
           node package-source/test.js
@@ -127,6 +127,15 @@ jobs:
           Push-Location desktop
           & $wails build -clean -platform windows/amd64 -trimpath -webview2 browser
           Pop-Location
+      - name: Package Windows desktop with agent
+        shell: pwsh
+        run: |
+          $bundle = "dist\tattler-desktop-package"
+          Remove-Item -LiteralPath $bundle -Recurse -Force -ErrorAction SilentlyContinue
+          New-Item -ItemType Directory -Force $bundle | Out-Null
+          Copy-Item "desktop\build\bin\tattler-desktop-windows-amd64.exe" $bundle
+          Copy-Item "dist\tattler-windows-amd64.exe" $bundle
+          Compress-Archive -Path "$bundle\*" -DestinationPath "dist\tattler-desktop-windows-amd64.zip" -Force
       - uses: actions/upload-artifact@v4
         with:
           name: tattler-windows-amd64
@@ -134,4 +143,4 @@ jobs:
       - uses: actions/upload-artifact@v4
         with:
           name: tattler-desktop-windows-amd64
-          path: desktop/build/bin/tattler-desktop-windows-amd64.exe
+          path: dist/tattler-desktop-windows-amd64.zip

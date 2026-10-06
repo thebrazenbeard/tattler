@@ -104,10 +104,31 @@ func (s *Server) status(w http.ResponseWriter, _ *http.Request) {
 	})
 }
 
+type currentObservation struct {
+	model.Connection
+	FirstSeen  *time.Time `json:"first_seen,omitempty"`
+	AgeSeconds int64      `json:"age_seconds"`
+}
+
 func (s *Server) current(w http.ResponseWriter, _ *http.Request) {
 	s.State.mu.RLock()
 	defer s.State.mu.RUnlock()
-	writeJSON(w, s.State.current)
+
+	now := time.Now().UTC()
+	out := make([]currentObservation, 0, len(s.State.current))
+	for _, c := range s.State.current {
+		item := currentObservation{Connection: c}
+		if !c.FirstSeen.IsZero() {
+			first := c.FirstSeen.UTC()
+			item.FirstSeen = &first
+			item.AgeSeconds = int64(now.Sub(first).Seconds())
+			if item.AgeSeconds < 0 {
+				item.AgeSeconds = 0
+			}
+		}
+		out = append(out, item)
+	}
+	writeJSON(w, out)
 }
 
 func (s *Server) events(w http.ResponseWriter, r *http.Request) {
@@ -179,11 +200,12 @@ th,td{padding:7px;border-bottom:1px solid #333;text-align:left}code{color:#9fe}
 <div class="card"><div>Memory available</div><div class="big" id="mem">-</div></div>
 <div class="card"><div>Load 1m</div><div class="big" id="load">-</div></div></div>
 <h2>Findings</h2><div id="findings">None</div>
-<h2>Network activity</h2><table><thead><tr><th>Kind</th><th>Direction</th><th>Process</th><th>Protocol</th><th>Local</th><th>Remote</th><th>State</th></tr></thead><tbody id="connections"></tbody></table>
+<h2>Network activity</h2><table><thead><tr><th>Kind</th><th>Direction</th><th>Process</th><th>Protocol</th><th>Local</th><th>Remote</th><th title="Continuous time Tattler has observed this live endpoint">Observed for ↓</th><th>State</th></tr></thead><tbody id="connections"></tbody></table>
 <script>
 function pct(n){return Number(n||0).toFixed(1)+'%'}
 function unavailable(s,n){return Array.isArray(s.unavailable_metrics)&&s.unavailable_metrics.includes(n)}
 function esc(v){return String(v??'').replace(/[&<>\"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','\"':'&quot;',"'":'&#39;'}[c]))}
+function ageLabel(seconds){const n=Math.max(0,Number(seconds||0));if(n<60)return Math.floor(n)+'s';if(n<3600)return Math.floor(n/60)+'m '+Math.floor(n%60)+'s';if(n<86400)return Math.floor(n/3600)+'h '+Math.floor((n%3600)/60)+'m';return Math.floor(n/86400)+'d '+Math.floor((n%86400)/3600)+'h'}
 async function tick(){
  const st=await fetch('/api/v1/status').then(r=>r.json());
  const cs=await fetch('/api/v1/current').then(r=>r.json());
@@ -195,7 +217,8 @@ async function tick(){
  document.getElementById('load').textContent=unavailable(s,'load_average')?'n/a':Number(s.load1||0).toFixed(2);
  document.getElementById('mem').textContent=s.mem_total_kb?((s.mem_available_kb/s.mem_total_kb)*100).toFixed(1)+'%':'-';
  document.getElementById('findings').innerHTML=fs.length?fs.map(f=>'<div class="finding"><b>'+esc(f.severity).toUpperCase()+': '+esc(f.summary)+'</b><br>'+esc(f.evidence)+'</div>').join(''):'None';
- document.getElementById('connections').innerHTML=cs.map(c=>'<tr><td>'+esc(c.kind||'unknown')+'</td><td class="'+esc(c.direction)+'">'+esc(c.direction||'-')+'</td><td>'+esc((c.process&&c.process.name)||c.owner||'?')+((c.process&&c.process.pid)?' ('+esc(c.process.pid)+')':'')+'</td><td>'+esc(c.protocol)+'</td><td><code>'+esc(c.local)+'</code></td><td><code>'+esc((c.remote&&c.remote!=='invalid AddrPort'&&c.remote!=='0.0.0.0:0'&&c.remote!=='[::]:0')?c.remote:'-')+'</code></td><td>'+esc(c.state||'-')+'</td></tr>').join('');
+ const live=[...cs].sort((a,b)=>Number(b.age_seconds||0)-Number(a.age_seconds||0)||String(a.local||'').localeCompare(String(b.local||''))||String(a.remote||'').localeCompare(String(b.remote||''))||String((a.process||{}).pid||'').localeCompare(String((b.process||{}).pid||'')));
+ document.getElementById('connections').innerHTML=live.map(c=>'<tr><td>'+esc(c.kind||'unknown')+'</td><td class="'+esc(c.direction)+'">'+esc(c.direction||'-')+'</td><td>'+esc((c.process&&c.process.name)||c.owner||'?')+((c.process&&c.process.pid)?' ('+esc(c.process.pid)+')':'')+'</td><td>'+esc(c.protocol)+'</td><td><code>'+esc(c.local)+'</code></td><td><code>'+esc((c.remote&&c.remote!=='invalid AddrPort'&&c.remote!=='0.0.0.0:0'&&c.remote!=='[::]:0')?c.remote:'-')+'</code></td><td>'+esc(ageLabel(c.age_seconds))+'</td><td>'+esc(c.state||'-')+'</td></tr>').join('');
 }
 tick();setInterval(tick,2000)
 </script></body></html>`)
