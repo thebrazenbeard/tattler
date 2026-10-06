@@ -1,5 +1,23 @@
 const release = require("../release.json");
 
+const ARCH_ALIASES = {
+  x86_64: new Set([
+    "x86_64",
+    "apollolake", "avoton", "braswell", "broadwell", "broadwellnk",
+    "bromolow", "denverton", "geminilake", "grantley", "purley",
+    "v1000", "r1000", "r1600", "epyc7002", "kvmx64", "dockerx64"
+  ]),
+  armv7: new Set([
+    "armv7",
+    "armada370", "armada375", "armada38x", "armadaxp",
+    "alpine", "alpine4k", "monaco", "comcerto2k", "hi3535"
+  ]),
+  armv8: new Set([
+    "armv8", "aarch64",
+    "armada37xx", "rtd1296", "rtd1619", "rtd1619b"
+  ])
+};
+
 function paramsFrom(req) {
   const out = Object.assign({}, req.query || {});
   if (req.body && typeof req.body === "object") {
@@ -10,24 +28,37 @@ function paramsFrom(req) {
   return out;
 }
 
+function genericArch(requested) {
+  const value = String(requested || "").trim().toLowerCase();
+  for (const [arch, aliases] of Object.entries(ARCH_ALIASES)) {
+    if (aliases.has(value)) return arch;
+  }
+  return "";
+}
+
 module.exports = function handler(req, res) {
   const params = paramsFrom(req);
-  const arch = String(params.arch || "");
+  const requestedArch = String(params.arch || "");
+  const arch = genericArch(requestedArch);
   const build = Number.parseInt(String(params.build || "0"), 10) || 0;
   const host = req.headers["x-forwarded-host"] || req.headers.host;
   const proto = req.headers["x-forwarded-proto"] || "https";
   const base = host ? `${proto}://${host}` : "";
 
   const packages = [];
-  if (arch === release.arch && build >= release.min_build) {
+  const artifact = Array.isArray(release.releases)
+    ? release.releases.find(item => item.arch === arch)
+    : null;
+
+  if (artifact && build >= release.min_build) {
     const icon64 = `${base}/icons/PACKAGE_ICON.PNG`;
     const icon256 = `${base}/icons/PACKAGE_ICON_256.PNG`;
     packages.push({
-      package: "Tattler",
+      package: release.package,
       version: release.version,
       dname: "Tattler",
       desc: "Low-overhead host diagnostics and sampled network activity for Synology DSM.",
-      link: `${base}/releases/${release.filename}`,
+      link: `${base}/releases/${artifact.filename}`,
       thumbnail: [icon64],
       thumbnail_retina: [icon256, icon256],
       snapshot: [],
@@ -38,8 +69,8 @@ module.exports = function handler(req, res) {
       conflictpkgs: null,
       download_count: 0,
       recent_download_count: 0,
-      md5: release.md5,
-      size: release.size,
+      md5: artifact.md5,
+      size: artifact.size,
       maintainer: "thebrazenbeard",
       maintainer_url: "https://github.com/thebrazenbeard/tattler",
       distributor: "thebrazenbeard",
@@ -52,3 +83,6 @@ module.exports = function handler(req, res) {
   res.setHeader("Cache-Control", "public, max-age=300");
   res.status(200).json({ packages });
 };
+
+module.exports.genericArch = genericArch;
+module.exports.ARCH_ALIASES = ARCH_ALIASES;
