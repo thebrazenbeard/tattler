@@ -1,81 +1,115 @@
-# Tattler architecture V0.1
+# Tattler architecture
 
 ## Product question
 
-Tattler is an observation-only diagnostic agent. Its primary question is not merely "what is connected?" but "why is this Linux/NAS host slow right now, and what host evidence supports that answer?"
+Tattler is an observation-only diagnostic agent. Its primary question is: “why is this host slow right now, and what sampled host evidence supports that answer?”
+
+Linux/DSM and Windows use platform-specific collectors but publish into one evidence model. The Windows desktop companion is a consumer of that local evidence; it is not a second collector.
 
 ## Evidence pipelines
 
 ```text
-/proc/loadavg /proc/stat /proc/meminfo /proc/vmstat /proc/diskstats
-                         |
-                         v
-                 system sampler
-                         |
-             +-----------+-----------+
-             v                       v
-      bounded history           diagnosis rules
-                                    |
-                                    v
-                         evidence-bearing findings
+Linux /proc system/process sources             Windows system APIs
+              |                                      |
+              v                                      v
+        system sampler                         system sampler
+              |                                      |
+              +------------------+-------------------+
+                                 |
+                     bounded system history
+                                 |
+                         diagnosis rules
+                                 |
+                    evidence-bearing findings
 
-/proc/net/{tcp,tcp6,udp,udp6}
-          |
-          v
-  socket-table parser ------ /proc/<pid>/fd (best effort)
-          |                           |
-          +------------+--------------+
-                       v
-              attributed snapshot
-                       |
-             local/listener classifier
-                       |
+Linux /proc/net                         Windows IP Helper
+tcp,tcp6,udp,udp6              TCP/UDP OWNER_PID tables
+        |                                |
+        +---------------+----------------+
+                        v
+              typed endpoint snapshot
+        tcp_session / tcp_listener /
+                   udp_endpoint
+                        |
+             ownership enrichment
+                        |
                 snapshot differ
-                       |
-             open / close events
-                 /           \
-                v             v
-        rotated JSONL     memory window
-
-                         |
-                         v
-                loopback HTTP/API/UI
+                        |
+       sampled open / close observation events
+                 /                 \
+                v                   v
+         rotated JSONL        memory window
+                 \                 /
+                  +-------+---------+
+                          v
+                  loopback HTTP/API/UI
+                          |
+             +------------+------------+
+             |                         |
+       browser dashboard        Windows desktop
+                               Wails companion
 ```
 
-Connection sampling defaults to one second. The more expensive whole-host/process sampler defaults to five seconds so the diagnostic agent stays small on a 512 MB DS216.
+Network sampling defaults to one second. The more expensive Linux whole-host/process sampler defaults to five seconds so the agent remains small on DS216-class hardware.
+
+## Typed network observations
+
+The public model uses three kinds:
+
+- `tcp_session`: a sampled non-listening TCP endpoint pair and state;
+- `tcp_listener`: a sampled local TCP listener;
+- `udp_endpoint`: a sampled bound UDP endpoint.
+
+Linux reads `/proc/net/{tcp,tcp6,udp,udp6}`. Windows uses `GetExtendedTcpTable` and `GetExtendedUdpTable` OWNER_PID tables.
+
+A UDP endpoint has no inferred remote peer or direction. Its presence does not prove a datagram was sent or received. Likewise, a `tcp_session` is a sampled table row, not proof that Tattler observed the handshake.
+
+TCP direction is derived from local-address membership plus contemporaneous listener evidence where the platform supplies enough information. Listener direction is `listen`. UDP direction remains unset.
+
+## Observation event contract
+
+Each event has `schema_version`, `event_id`, `observed_at`, `host`, `kind`, `connection`, and `source`. The connection record also carries its typed observation `kind`.
+
+Journal event names `open` and `close` mean appearance and disappearance between samples. They do not claim kernel socket lifecycle, TCP SYN/FIN, or UDP datagram events.
+
+`event_id` is deterministic over the V1 occurrence fields. Collector `source` identifies how the evidence was sampled; it is provenance, not a fidelity upgrade.
 
 ## System telemetry
 
-The system sampler reads Linux kernel text interfaces rather than depending on a resident metrics stack. V0.1 measures load averages, aggregate CPU utilization, I/O-wait share, memory availability, swap use and churn, major faults, aggregate physical-disk read/write rates, runnable-process count, and a bounded list of resource-heavy processes.
+The Linux sampler reads kernel text interfaces rather than requiring a resident metrics stack. It measures load averages, aggregate CPU utilization, I/O-wait share, memory availability, swap use/churn, major faults, physical-disk rates/latency/utilization/queue evidence, Linux MD state, runnable-process count, and a bounded list of resource-heavy processes.
 
-Process CPU is derived from per-process tick deltas against aggregate CPU tick deltas. Process I/O uses `/proc/<pid>/io` where readable. Missing process data is treated as missing evidence rather than as zero-cost proof.
+The Windows sampler currently provides host CPU and physical-memory evidence. Linux-only fields remain explicitly unavailable on Windows rather than being inferred.
 
-The diagnosis layer currently recognizes pressure patterns, not root causes: `memory-pressure`, `memory-critical`, `swap-churn`, `storage-wait`, `cpu-saturation`, `blocked-load`, and `major-faults`. Each finding carries the measurement that triggered it.
+Process CPU on Linux is derived from per-process tick deltas against aggregate CPU tick deltas. Process I/O uses `/proc/<pid>/io` where readable. Missing process data is missing evidence, not zero.
 
-## Connection event contract
+The diagnosis layer recognizes bounded pressure patterns such as `memory-pressure`, `memory-critical`, `swap-churn`, `storage-wait`, `cpu-saturation`, `blocked-load`, `major-faults`, and proven MD degradation. Each finding carries the measurements that triggered it.
 
-Each connection event has `schema_version`, `event_id`, `observed_at`, `host`, `kind`, `connection`, and `source`. `event_id` is SHA-256 over the exact V1 occurrence fields. `source=proc-sampler` describes how the observation was made; it does not claim kernel packet telemetry.
+## Windows desktop companion
 
-Connection records include protocol, local/remote endpoints, state when available, direction, socket inode, UID, and best-effort process attribution. TCP direction is derived from local-address membership plus contemporaneous listening sockets. UDP evidence is materially weaker and must not be interpreted as complete datagram provenance.
+The optional `desktop/` module uses Wails v2.14.0 and static frontend assets. Its Go backend reads only the agent’s loopback API at `127.0.0.1:9147`.
+
+On startup it attaches to an existing healthy agent. If no agent is available, it may launch a sibling Windows Tattler executable and records ownership of only that child. Shutdown may stop only a child the companion launched itself.
+
+The companion does not open a public listener, collect network telemetry independently, or broaden the agent’s authority.
 
 ## Safety boundary
 
-V0.1 is read-only. It does not modify firewall/routing state, open raw packet sockets, capture payloads, alter DNS, create public listeners, or transmit telemetry off-host. The DSM package runs as the package account rather than root.
+Tattler does not modify firewall/routing state, open raw packet sockets, capture payloads, alter DNS, create public listeners, or transmit telemetry off-host. The DSM package runs as the package account rather than root.
 
-The UI/API is hard-bound to loopback. Persistent connection-event state is created with restrictive permissions inside package state. System-sample history is currently memory-bounded and intentionally not written every five seconds to avoid turning Tattler into a source of disk pressure on the DS216.
+The HTTP UI/API is hard-bound to loopback. Persistent event state is created inside the configured state directory. System-sample history is memory-bounded to avoid making Tattler itself a source of disk pressure.
 
 ## Known limitations
 
-- Sampling can miss short connections and short resource spikes between samples.
-- PID/process attribution can fail because a process exited or DSM denies `/proc/<pid>/fd`.
+- Sampling can miss short TCP sessions, endpoint churn, and short resource spikes between samples.
+- UDP endpoint presence is not datagram or remote-peer evidence.
+- PID/process attribution can fail because a process exited or OS permissions deny enrichment.
 - Linux network namespaces can hide sockets/processes from the host namespace view.
-- NAT can make observed endpoints differ from external/application endpoints.
-- Aggregate disk throughput does not by itself reveal latency, queue depth, SMART health, or which block layer caused a stall.
-- I/O-wait is evidence of tasks waiting on I/O, not proof of a failing disk.
-- Reverse DNS and SMART polling are intentionally absent from the hot path.
+- NAT can make observed endpoints differ from application/external endpoints.
+- I/O-wait and storage latency are evidence of waiting, not proof of a failing disk.
+- ETW, pcap, eBPF, reverse DNS, and hot-path SMART polling are not part of this release.
 
 ## Extension seams
 
-The connection journal/API consumes versioned events rather than raw `/proc` rows, so a later collector can add Netfilter conntrack, pcap, or eBPF without replacing the data contract.
+The journal/API consumes versioned typed observations rather than raw platform rows, so later ETW, Netfilter conntrack, pcap, or eBPF collectors can be added without pretending their evidence is equivalent to sampled tables.
 
-The system sampler is similarly independent of diagnosis rules. Future SMART/RAID/DSM-specific collectors can enrich a sample or produce separate evidence without allowing one source to silently stand in for another.
+The system sampler is independent of diagnosis rules. Future DSM/device identity, low-frequency SMART, and richer Windows telemetry can enrich the model without allowing one source to silently stand in for another.

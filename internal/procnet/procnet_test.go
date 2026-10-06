@@ -40,3 +40,48 @@ func TestReadTCP(t *testing.T) {
 		t.Fatalf("bad row: %+v", c)
 	}
 }
+
+func TestReadRetainsTypedListenersAndUnconnectedUDP(t *testing.T) {
+	root := t.TempDir()
+	netDir := filepath.Join(root, "net")
+	if err := os.MkdirAll(netDir, 0755); err != nil {
+		t.Fatal(err)
+	}
+	header := "  sl  local_address rem_address   st tx_queue rx_queue tr tm->when retrnsmt   uid  timeout inode\n"
+	tcp := header +
+		"   0: 00000000:238B 00000000:0000 0A 00000000:00000000 00:00000000 00000000 1000 0 111 1\n" +
+		"   1: 0100007F:C350 0100007F:01BB 01 00000000:00000000 00:00000000 00000000 1000 0 222 1\n"
+	udp := header +
+		"   0: 00000000:14E9 00000000:0000 07 00000000:00000000 00:00000000 00000000 1000 0 333 1\n"
+	if err := os.WriteFile(filepath.Join(netDir, "tcp"), []byte(tcp), 0644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(netDir, "udp"), []byte(udp), 0644); err != nil {
+		t.Fatal(err)
+	}
+	snap, err := Read(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(snap.Listeners) != 1 {
+		t.Fatalf("listeners=%d, want 1", len(snap.Listeners))
+	}
+	if snap.Listeners[0].Kind != "tcp_listener" {
+		t.Fatalf("listener kind=%q", snap.Listeners[0].Kind)
+	}
+	if len(snap.Connections) != 2 {
+		t.Fatalf("observations=%d, want TCP session + UDP endpoint", len(snap.Connections))
+	}
+	kinds := map[string]bool{}
+	for _, c := range snap.Connections {
+		kinds[c.Kind] = true
+		if c.Kind == "udp_endpoint" {
+			if got := c.Remote.String(); got != "0.0.0.0:0" {
+				t.Fatalf("udp remote=%q, want unspecified peer", got)
+			}
+		}
+	}
+	if !kinds["tcp_session"] || !kinds["udp_endpoint"] {
+		t.Fatalf("kinds=%v, want tcp_session and udp_endpoint", kinds)
+	}
+}

@@ -1,0 +1,13 @@
+Copyright (c) 2026 Patrick Sims. All rights reserved.
+
+Original Tattler material in this repository is source-visible proprietary material unless a file, directory, dependency, or notice states otherwise.
+
+Public visibility does not make Tattler open source and does not grant commercial use, redistribution, hosted-service, sublicensing, or commercial derivative-work rights. See LICENSE and COMMERCIAL_LICENSE.md.
+
+Third-party material remains under its applicable licenses and attribution requirements. Nothing in this notice claims ownership of third-party material.
+
+The Windows desktop companion uses Wails v2.14.0. Wails is distributed under the MIT License and is Copyright (c) 2018-Present Lea Anthony. Its license terms remain controlling for Wails material.
+
+Other third-party build/runtime dependencies retain their own copyright and license terms.
+
+Licensing changes are prospective and do not revoke rights validly granted for earlier versions, commits, releases, or separately licensed material.

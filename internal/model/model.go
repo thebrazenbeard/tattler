@@ -14,7 +14,14 @@ type ProcessInfo struct {
 	Exe  string `json:"exe,omitempty"`
 }
 
+const (
+	ObservationTCPSession  = "tcp_session"
+	ObservationTCPListener = "tcp_listener"
+	ObservationUDPEndpoint = "udp_endpoint"
+)
+
 type Connection struct {
+	Kind      string         `json:"kind,omitempty"`
 	Protocol  string         `json:"protocol"`
 	Local     netip.AddrPort `json:"local"`
 	Remote    netip.AddrPort `json:"remote"`
@@ -27,7 +34,11 @@ type Connection struct {
 }
 
 func (c Connection) Key() string {
-	return fmt.Sprintf("%s|%s|%s|%d", c.Protocol, c.Local, c.Remote, c.Inode)
+	identity := fmt.Sprintf("inode:%d", c.Inode)
+	if c.Inode == 0 {
+		identity = fmt.Sprintf("pid:%d", c.Process.PID)
+	}
+	return fmt.Sprintf("%s|%s|%s|%s|%s", c.Kind, c.Protocol, c.Local, c.Remote, identity)
 }
 
 type Event struct {

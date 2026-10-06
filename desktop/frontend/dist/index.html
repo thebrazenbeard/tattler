@@ -1,0 +1,54 @@
+<!doctype html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Tattler</title>
+<link rel="icon" href="tattler-icon.png">
+<style>
+:root{font-family:Segoe UI,system-ui,sans-serif;color:#e8edf2;background:#0f1318}
+*{box-sizing:border-box}body{margin:0;padding:24px;background:linear-gradient(145deg,#0f1318,#151c24);min-height:100vh}
+header{display:flex;align-items:center;justify-content:space-between;gap:16px;margin-bottom:22px}
+.brand{display:flex;align-items:center;gap:13px}.brand img{width:48px;height:48px;border-radius:11px}.brand h1{margin:0;font-size:25px}
+.sub{color:#8fa2b5;font-size:13px}.state{padding:7px 11px;border-radius:999px;background:#202a35;color:#b8c7d6}
+.state.ok{background:#173524;color:#96e7b2}.state.bad{background:#3a2024;color:#ffadb5}
+button{background:#2a70d6;color:white;border:0;border-radius:8px;padding:9px 13px;font-weight:600;cursor:pointer}
+button:hover{filter:brightness(1.08)}.grid{display:grid;grid-template-columns:repeat(4,minmax(130px,1fr));gap:12px}
+.card{background:#171e26;border:1px solid #283440;border-radius:10px;padding:14px}.label{color:#8fa2b5;font-size:12px}.value{font-size:22px;font-weight:700;margin-top:4px}
+section{margin-top:22px}h2{font-size:16px;margin:0 0 10px}table{width:100%;border-collapse:collapse;background:#151b22;border:1px solid #283440;border-radius:10px;overflow:hidden}
+th,td{text-align:left;padding:8px 10px;border-bottom:1px solid #27313b;font-size:12px}th{color:#8fa2b5;background:#1a222b}code{color:#9bdcff}
+.finding{background:#241f16;border:1px solid #40331e;border-radius:8px;padding:10px;margin:7px 0}.muted{color:#8fa2b5}.error{color:#ffadb5}
+@media(max-width:850px){.grid{grid-template-columns:repeat(2,1fr)}body{padding:14px}.scroll{overflow:auto}}
+</style>
+</head>
+<body>
+<header><div class="brand"><img src="tattler-icon.png" alt=""><div><h1>Tattler</h1><div class="sub">Local host diagnostics and network activity</div></div></div><div><span id="state" class="state">Checking…</span> <button id="start">Start agent</button></div></header>
+<div class="grid">
+<div class="card"><div class="label">CPU</div><div class="value" id="cpu">—</div></div>
+<div class="card"><div class="label">Memory available</div><div class="value" id="mem">—</div></div>
+<div class="card"><div class="label">Observations</div><div class="value" id="obs">—</div></div>
+<div class="card"><div class="label">Collector</div><div class="value" id="collector" style="font-size:15px">—</div></div>
+</div>
+<section><h2>Findings</h2><div id="findings" class="muted">None</div></section>
+<section><h2>Network activity</h2><div class="scroll"><table><thead><tr><th>Kind</th><th>Direction</th><th>Process</th><th>Protocol</th><th>Local</th><th>Remote</th><th>State</th></tr></thead><tbody id="current"></tbody></table></div></section>
+<section><h2>Recent observation events</h2><div class="scroll"><table><thead><tr><th>Observed</th><th>Event</th><th>Kind</th><th>Endpoint</th><th>Process</th></tr></thead><tbody id="events"></tbody></table></div></section>
+<script>
+const $=id=>document.getElementById(id);
+const esc=v=>String(v??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+const endpoint=v=>(!v||v==='0.0.0.0:0'||v==='[::]:0'||v==='invalid AddrPort')?'-':v;
+const proc=c=>((c.process&&c.process.name)||c.owner||'?')+((c.process&&c.process.pid)?' ('+c.process.pid+')':'');
+function render(s){
+ const a=s.agent||{}; $('state').textContent=a.running?(a.managed?'Agent running • managed':'Agent running • attached'):(a.error||'Agent offline'); $('state').className='state '+(a.running?'ok':'bad');
+ const st=s.status||{}, sys=st.latest_system||{}; $('cpu').textContent=Number(sys.cpu_percent||0).toFixed(1)+'%';
+ $('mem').textContent=sys.mem_total_kb?((sys.mem_available_kb/sys.mem_total_kb)*100).toFixed(1)+'%':'n/a';
+ $('obs').textContent=st.current_observations??st.current_connections??0; $('collector').textContent=st.collector||'—';
+ const fs=s.findings||[]; $('findings').innerHTML=fs.length?fs.map(f=>'<div class="finding"><b>'+esc((f.severity||'info').toUpperCase())+': '+esc(f.summary)+'</b><br><span class="muted">'+esc(f.evidence)+'</span></div>').join(''):'<span class="muted">None</span>';
+ $('current').innerHTML=(s.current||[]).map(c=>'<tr><td>'+esc(c.kind||'unknown')+'</td><td>'+esc(c.direction||'-')+'</td><td>'+esc(proc(c))+'</td><td>'+esc(c.protocol)+'</td><td><code>'+esc(c.local)+'</code></td><td><code>'+esc(endpoint(c.remote))+'</code></td><td>'+esc(c.state||'-')+'</td></tr>').join('');
+ $('events').innerHTML=(s.events||[]).slice().reverse().map(e=>{const c=e.connection||{};return '<tr><td>'+esc(e.observed_at||'')+'</td><td>'+esc(e.kind||'')+'</td><td>'+esc(c.kind||'unknown')+'</td><td><code>'+esc(c.local||'')+'</code></td><td>'+esc(proc(c))+'</td></tr>'}).join('');
+}
+async function refresh(){try{render(await window.go.main.App.Snapshot())}catch(e){$('state').textContent='Agent offline';$('state').className='state bad';$('collector').textContent='—';console.error(e)}}
+$('start').addEventListener('click',async()=>{try{await window.go.main.App.StartAgent()}finally{await refresh()}});
+refresh();setInterval(refresh,2000);
+</script>
+</body>
+</html>

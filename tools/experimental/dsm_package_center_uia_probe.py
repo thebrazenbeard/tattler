@@ -14,11 +14,12 @@ Runtime dependency (kept outside the repo in current qualification):
 from __future__ import annotations
 
 import argparse
+import os
 import sys
 import time
 
 
-DSM_ADDRESS = "192.168.1.187:5001"
+DSM_ADDRESS = os.environ.get("TATTLER_DSM_ADDRESS", "")
 STALE_ROOT_ERROR = "Unable to install Tattler because it runs with root privileges"
 
 
@@ -32,7 +33,9 @@ def get_desktop():
     return Desktop(backend="uia")
 
 
-def find_dsm_window():
+def find_dsm_window(address: str):
+    if not address:
+        raise RuntimeError("DSM address is required via --address or TATTLER_DSM_ADDRESS")
     desktop = get_desktop()
     matches = []
     for window in desktop.windows():
@@ -42,7 +45,7 @@ def find_dsm_window():
             for control in window.descendants(control_type="ComboBox"):
                 if (
                     control.element_info.automation_id == "urlbar-input"
-                    and control.window_text().strip() == DSM_ADDRESS
+                    and control.window_text().strip() == address
                 ):
                     matches.append(window)
                     break
@@ -111,13 +114,18 @@ def dump_controls(window) -> None:
 def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument(
+        "--address",
+        default=DSM_ADDRESS,
+        help="DSM host:port; defaults to TATTLER_DSM_ADDRESS",
+    )
+    parser.add_argument(
         "--open-settings",
         action="store_true",
         help="dismiss only the known stale v0004 error dialog and open Package Center Settings",
     )
     args = parser.parse_args()
 
-    window = find_dsm_window()
+    window = find_dsm_window(args.address)
     print(f"DSM_WINDOW handle={window.handle} title={window.window_text()!r}")
 
     if args.open_settings:

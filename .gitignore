@@ -5,3 +5,6 @@ dist/
 tattler-state/
 __pycache__/
 *.pyc
+desktop/build/bin/
+desktop/frontend/wailsjs/
+desktop/build/windows/

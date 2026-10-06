@@ -12,6 +12,7 @@ import (
 	"os"
 	"os/signal"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"syscall"
 	"time"
@@ -24,6 +25,7 @@ import (
 	"github.com/thebrazenbeard/tattler/internal/store"
 	"github.com/thebrazenbeard/tattler/internal/tracker"
 	"github.com/thebrazenbeard/tattler/internal/uidmap"
+	"github.com/thebrazenbeard/tattler/internal/wincollect"
 )
 
 func main() {
@@ -70,19 +72,37 @@ func main() {
 	tr := tracker.New()
 	uiState := newUIState(statePath, *keepLogs)
 	sysSampler := metrics.NewSampler(*procRoot)
-	if sample, sampleErr := sysSampler.Sample(time.Now().UTC()); sampleErr != nil {
+	windowsSampler := wincollect.New()
+	cache := make(map[uint64]model.ProcessInfo)
+	source := "proc-sampler"
+	if runtime.GOOS == "windows" {
+		source = "windows-ip-helper"
+	}
+	uiState.SetSource(source)
+	sampleSystem := func(at time.Time) (metrics.Sample, error) {
+		if runtime.GOOS == "windows" {
+			return windowsSampler.Sample(at)
+		}
+		return sysSampler.Sample(at)
+	}
+	readConnections := func() ([]model.Connection, error) {
+		if runtime.GOOS == "windows" {
+			return windowsSampler.Connections()
+		}
+		snap, err := procnet.Read(*procRoot)
+		return decorate(snap, *procRoot, owners, local, cache), err
+	}
+	if sample, sampleErr := sampleSystem(time.Now().UTC()); sampleErr != nil {
 		log.Printf("initial system sample warning: %v", sampleErr)
 		uiState.AddSystem(sample, metrics.Diagnose(sample))
 	} else {
 		uiState.AddSystem(sample, metrics.Diagnose(sample))
 	}
 
-	snap, err := procnet.Read(*procRoot)
+	initial, err := readConnections()
 	if err != nil {
-		log.Printf("initial proc scan warning: %v", err)
+		log.Printf("initial connection scan warning: %v", err)
 	}
-	cache := make(map[uint64]model.ProcessInfo)
-	initial := decorate(snap, *procRoot, owners, local, cache)
 	tr.Baseline(initial)
 	uiState.SetCurrent(initial)
 
@@ -110,19 +130,18 @@ func main() {
 			_ = httpServer.Shutdown(shutdownCtx)
 			return
 		case <-connectionTicker.C:
-			snap, err := procnet.Read(*procRoot)
+			current, err := readConnections()
 			if err != nil {
-				log.Printf("proc scan warning: %v", err)
+				log.Printf("connection scan warning: %v", err)
 			}
-			current := decorate(snap, *procRoot, owners, local, cache)
 			opened, closed := tr.Diff(current)
 			now := time.Now().UTC()
 			events := make([]model.Event, 0, len(opened)+len(closed))
 			for _, c := range opened {
-				events = append(events, model.NewEvent(now, hostname, "open", "proc-sampler", c))
+				events = append(events, model.NewEvent(now, hostname, "open", source, c))
 			}
 			for _, c := range closed {
-				events = append(events, model.NewEvent(now, hostname, "close", "proc-sampler", c))
+				events = append(events, model.NewEvent(now, hostname, "close", source, c))
 			}
 			if err := journal.Append(events); err != nil {
 				log.Printf("journal append: %v", err)
@@ -131,7 +150,7 @@ func main() {
 			uiState.SetCurrent(current)
 			pruneCache(cache, current)
 		case now := <-metricsTicker.C:
-			systemSample, systemErr := sysSampler.Sample(now.UTC())
+			systemSample, systemErr := sampleSystem(now.UTC())
 			if systemErr != nil {
 				log.Printf("system sample warning: %v", systemErr)
 			}
@@ -154,8 +173,12 @@ func newUIState(statePath string, keepLogs int) *server.State {
 }
 
 func decorate(snap procnet.Snapshot, procRoot string, owners map[uint32]string, local map[netip.Addr]struct{}, cache map[uint64]model.ProcessInfo) []model.Connection {
+	all := make([]model.Connection, 0, len(snap.Connections)+len(snap.Listeners))
+	all = append(all, snap.Connections...)
+	all = append(all, snap.Listeners...)
+
 	wanted := make(map[uint64]struct{})
-	for _, c := range snap.Connections {
+	for _, c := range all {
 		if c.Inode != 0 {
 			if _, ok := cache[c.Inode]; !ok {
 				wanted[c.Inode] = struct{}{}
@@ -165,9 +188,26 @@ func decorate(snap procnet.Snapshot, procRoot string, owners map[uint32]string, 
 	for inode, p := range procmap.Resolve(procRoot, wanted) {
 		cache[inode] = p
 	}
-	out := make([]model.Connection, 0, len(snap.Connections))
-	for _, c := range snap.Connections {
-		c.Direction = tracker.Classify(c, snap.Listeners, local)
+	out := make([]model.Connection, 0, len(all))
+	for _, c := range all {
+		if c.Kind == "" {
+			switch {
+			case strings.HasPrefix(c.Protocol, "tcp") && c.State == "LISTEN":
+				c.Kind = model.ObservationTCPListener
+			case strings.HasPrefix(c.Protocol, "tcp"):
+				c.Kind = model.ObservationTCPSession
+			case strings.HasPrefix(c.Protocol, "udp"):
+				c.Kind = model.ObservationUDPEndpoint
+			}
+		}
+		switch c.Kind {
+		case model.ObservationTCPSession:
+			c.Direction = tracker.Classify(c, snap.Listeners, local)
+		case model.ObservationTCPListener:
+			c.Direction = "listen"
+		case model.ObservationUDPEndpoint:
+			c.Direction = ""
+		}
 		if owner, ok := owners[c.UID]; ok {
 			c.Owner = owner
 		}
