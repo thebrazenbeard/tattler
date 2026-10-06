@@ -19,5 +19,13 @@ class DesktopPackagingTests(unittest.TestCase):
         self.assertIn("startError", text)
 
 
+class LiveAgeOrderingTests(unittest.TestCase):
+    def test_desktop_live_table_sorts_oldest_observations_first(self):
+        text = (ROOT / "desktop" / "frontend" / "dist" / "index.html").read_text(encoding="utf-8")
+        self.assertIn("Observed for ↓", text)
+        self.assertIn("age_seconds", text)
+        self.assertIn("Number(b.age_seconds||0)-Number(a.age_seconds||0)", text)
+
+
 if __name__ == "__main__":
     unittest.main()

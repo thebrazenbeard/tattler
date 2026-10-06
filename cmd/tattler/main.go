@@ -103,8 +103,9 @@ func main() {
 	if err != nil {
 		log.Printf("initial connection scan warning: %v", err)
 	}
-	tr.Baseline(initial)
-	uiState.SetCurrent(initial)
+	initialSeen := time.Now().UTC()
+	tr.BaselineAt(initial, initialSeen)
+	uiState.SetCurrent(tr.Annotate(initial))
 
 	httpServer := &http.Server{
 		Addr: *listen, Handler: (&server.Server{State: uiState}).Handler(),
@@ -134,8 +135,8 @@ func main() {
 			if err != nil {
 				log.Printf("connection scan warning: %v", err)
 			}
-			opened, closed := tr.Diff(current)
 			now := time.Now().UTC()
+			opened, closed := tr.DiffAt(current, now)
 			events := make([]model.Event, 0, len(opened)+len(closed))
 			for _, c := range opened {
 				events = append(events, model.NewEvent(now, hostname, "open", source, c))
@@ -147,7 +148,7 @@ func main() {
 				log.Printf("journal append: %v", err)
 			}
 			uiState.Add(events...)
-			uiState.SetCurrent(current)
+			uiState.SetCurrent(tr.Annotate(current))
 			pruneCache(cache, current)
 		case now := <-metricsTicker.C:
 			systemSample, systemErr := sampleSystem(now.UTC())

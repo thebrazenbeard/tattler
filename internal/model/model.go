@@ -23,6 +23,7 @@ const (
 type Connection struct {
 	Kind      string         `json:"kind,omitempty"`
 	Protocol  string         `json:"protocol"`
+	FirstSeen time.Time      `json:"-"`
 	Local     netip.AddrPort `json:"local"`
 	Remote    netip.AddrPort `json:"remote"`
 	State     string         `json:"state,omitempty"`

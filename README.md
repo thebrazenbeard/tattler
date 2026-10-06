@@ -68,6 +68,8 @@ The separate `desktop/` Wails v2.14.0 module is a local companion, not a second 
 
 At startup it attaches to an already-running loopback agent when available. If it launches a sibling Tattler agent itself, it tracks ownership and may stop only that child on shutdown; it does not terminate an externally started agent.
 
+The live network table is ordered by continuous observation age, oldest first, and shows that value as `Observed for ↓`. This is the time since Tattler first saw the still-present socket/endpoint during the current agent run; it is not packet-idle time and does not claim the operating system exposed the connection's true creation timestamp.
+
 Build it on Windows:
 
 ```powershell
