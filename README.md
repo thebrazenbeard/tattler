@@ -144,7 +144,7 @@ The same source candidate also closes several journal-durability gaps without ch
 
 A leftover `.rotate-oldest` still blocks later rotation rather than being guessed away automatically. That is intentional fail-closed behavior: the source preserves ambiguous recovery evidence instead of deleting it without enough state to prove the prior rotation completed.
 
-`0.2.0-0001` was the prior SOURCE/BUILD/PACKAGE/EXACT-HEAD-CI-qualified candidate. `0.2.0-0002` added the shared Windows/native-observation work. The current package revision is `0.2.0-0003`, which hardens DSM service lifecycle behavior without changing the package-user privilege model. The live DS216 remains on runtime-qualified `0.1.0-0007` until a separate install/upgrade is explicitly authorized and read back.
+`0.2.0-0001` was the prior SOURCE/BUILD/PACKAGE/EXACT-HEAD-CI-qualified candidate. `0.2.0-0002` added the shared Windows/native-observation work. `0.2.0-0003` hardened DSM service lifecycle behavior. The current package revision is `0.2.0-0004`, which keeps those lifecycle protections and adds generic DSM package artifacts for x86_64, ARMv7, and ARMv8/AArch64. The live DS216 remains on runtime-qualified `0.1.0-0007` until a separate install/upgrade is explicitly authorized and read back.
 
 ## Native DSM updates
 
@@ -155,7 +155,7 @@ The SPK declares:
 - `silent_upgrade="yes"`
 - `auto_upgrade_from="0.1.0-0003"`
 
-The repository contains `package-source/`, a DSM package-source endpoint serving compatible `armada38x` hosts at DSM build `72806` or newer. The release manifest is derived from the finished SPK, and CI requires the published SPK to equal the deterministic CI artifact byte-for-byte.
+The repository contains `package-source/`, a DSM package-source endpoint serving compatible DSM build `72806` or newer systems across three generic CPU families: `x86_64`, `armv7`, and `armv8`. Package Source maps Synology platform identifiers to those generic artifacts—for example `armada38x` to `armv7`, `rtd1296`/`armada37xx` to `armv8`, and Intel/AMD platforms such as `geminilake` to `x86_64`. The release manifest is derived from all three finished SPKs, and CI requires every published SPK to equal its deterministic CI artifact byte-for-byte.
 
 The live DSM Package Source is already registered on the DS216 as `Tattler`.
 
@@ -172,7 +172,17 @@ The `0.2.0-0003` SPK improves package behavior without requesting additional pri
 - initializes the state directory at mode `0700` and service log at mode `0600` on install/upgrade;
 - keeps `conf/privilege` package-user-only and keeps the HTTP surface loopback-only.
 
-The SPK verifier now enforces these lifecycle invariants in addition to archive safety, deterministic metadata, ARM architecture, package-user privilege, icon dimensions, payload membership, checksum, and extract-size checks.
+The SPK verifier now enforces these lifecycle invariants in addition to archive safety, deterministic metadata, ELF architecture matching, package-user privilege, icon dimensions, payload membership, checksum, and extract-size checks.
+
+### DSM multi-architecture revision 0.2.0-0004
+
+The `0.2.0-0004` release keeps the `0.2.0-0003` lifecycle hardening and publishes three generic DSM package artifacts:
+
+- `Tattler-x86_64-0.2.0-0004.spk` for generic x86_64 DSM systems;
+- `Tattler-armv7-0.2.0-0004.spk` for generic ARMv7 DSM systems, including the DS216's `armada38x` platform;
+- `Tattler-armv8-0.2.0-0004.spk` for generic ARMv8/AArch64 DSM systems such as `rtd1296` and `armada37xx`.
+
+Each SPK contains a binary whose ELF machine must match the SPK's declared generic architecture. Package Source routes model-specific Synology platform identifiers to the matching generic artifact instead of publishing one model-specific SPK as though it were universal.
 
 ## Performance posture
 
@@ -190,20 +200,32 @@ Exact PID/process attribution can race process exit or be blocked by permissions
 go test ./...
 go vet ./...
 
+mkdir -p dist
+
+CGO_ENABLED=0 GOOS=linux GOARCH=amd64 GOAMD64=v1 \
+  go build -trimpath -buildvcs=false -ldflags='-s -w -buildid=' \
+  -o dist/tattler-linux-x86_64 ./cmd/tattler
+
 CGO_ENABLED=0 GOOS=linux GOARCH=arm GOARM=7 \
   go build -trimpath -buildvcs=false -ldflags='-s -w -buildid=' \
   -o dist/tattler-linux-armv7 ./cmd/tattler
 
-python tools/build_spk.py \
-  --binary dist/tattler-linux-armv7 \
-  --output dist/Tattler.spk
+CGO_ENABLED=0 GOOS=linux GOARCH=arm64 GOARM64=v8.0 \
+  go build -trimpath -buildvcs=false -ldflags='-s -w -buildid=' \
+  -o dist/tattler-linux-armv8 ./cmd/tattler
 
-python tools/verify_spk.py dist/Tattler.spk
-python -m unittest tools.release_hygiene_test tools.release_docs_test tools.spk_lifecycle_test
+python tools/build_spk.py --arch x86_64 --binary dist/tattler-linux-x86_64 --output dist/Tattler-x86_64.spk
+python tools/build_spk.py --arch armv7 --binary dist/tattler-linux-armv7 --output dist/Tattler-armv7.spk
+python tools/build_spk.py --arch armv8 --binary dist/tattler-linux-armv8 --output dist/Tattler-armv8.spk
+
+python tools/verify_spk.py dist/Tattler-x86_64.spk
+python tools/verify_spk.py dist/Tattler-armv7.spk
+python tools/verify_spk.py dist/Tattler-armv8.spk
+python -m unittest tools.release_hygiene_test tools.release_docs_test tools.spk_lifecycle_test tools.spk_multiarch_test
 python tools/release_hygiene.py --check .
 ```
 
-CI pins Go 1.27.0 for the release candidate, builds the ARMv7 SPK deterministically, and also runs the independent strict DSM 7.2.2 verifier from `thebrazenbeard/spk-packager@89085efb9e439dfd05f26ad56d857ef71f2d52b1`.
+CI pins Go 1.27.0, builds x86_64, ARMv7, and ARMv8/AArch64 binaries and SPKs twice for deterministic comparison, verifies each SPK in-repo, and runs the independent strict DSM 7.2.2 verifier from `thebrazenbeard/spk-packager@89085efb9e439dfd05f26ad56d857ef71f2d52b1` against all three artifacts.
 
 ## Status
 
@@ -219,11 +241,11 @@ Current live runtime subject `0.1.0-0007`:
 
 `PACKAGE_USER_ONLY / UID_OWNER_ATTRIBUTION_IMPLEMENTED / PACKAGE_SOURCE_LIVE / NATIVE_PACKAGE_CENTER_UPGRADE_PASS / LIVE_DAEMON_PASS / LOOPBACK_API_PASS / UID_OWNER_ATTRIBUTION_RUNTIME_PASS`
 
-Current source/package candidate `0.2.0-0003`:
+Current source/package candidate `0.2.0-0004`:
 
-`TYPED_TCP_SESSION_LISTENER_UDP_ENDPOINT_SOURCE / WINDOWS_TCP_UDP_OWNER_PID_SOURCE / WINDOWS_DESKTOP_COMPANION_SOURCE / DISK_PRESSURE_EVIDENCE_IMPLEMENTED / JOURNAL_RECOVERY_HARDENED / DSM_PID_IDENTITY_GUARD / LOOPBACK_LISTENER_READINESS / ATOMIC_PIDFILE / BOUNDED_SERVICE_LOG / PACKAGE_STATE_MODE_0700 / PACKAGE_LOG_MODE_0600 / PACKAGE_USER_ONLY / PACKAGE_SOURCE_BOUND_TO_CI_ARTIFACT / EXACT_HEAD_CI_RECEIPT_RECORDED / NOT_INSTALLED_ON_DSM / DSM_RUNTIME_NOT_QUALIFIED`
+`TYPED_TCP_SESSION_LISTENER_UDP_ENDPOINT_SOURCE / WINDOWS_TCP_UDP_OWNER_PID_SOURCE / WINDOWS_DESKTOP_COMPANION_SOURCE / DISK_PRESSURE_EVIDENCE_IMPLEMENTED / JOURNAL_RECOVERY_HARDENED / DSM_PID_IDENTITY_GUARD / LOOPBACK_LISTENER_READINESS / ATOMIC_PIDFILE / BOUNDED_SERVICE_LOG / PACKAGE_STATE_MODE_0700 / PACKAGE_LOG_MODE_0600 / PACKAGE_USER_ONLY / MULTIARCH_X86_64_ARMV7_ARMV8_SOURCE / PACKAGE_SOURCE_REBIND_PENDING / EXACT_HEAD_CI_PENDING / NOT_INSTALLED_ON_DSM / DSM_RUNTIME_NOT_QUALIFIED`
 
-The earlier `0.2.0-0002` qualification receipt remains in `docs/PUBLIC_RELEASE_QUALIFICATION_20261006.md`. Exact source/build/package qualification for `0.2.0-0003` is recorded in `docs/PUBLIC_RELEASE_QUALIFICATION_20261006_V0003.md`. Installation/runtime claims still require separate live DS216 readback.
+The earlier `0.2.0-0002` and `0.2.0-0003` qualification receipts remain in `docs/PUBLIC_RELEASE_QUALIFICATION_20261006.md` and `docs/PUBLIC_RELEASE_QUALIFICATION_20261006_V0003.md`. The `0.2.0-0004` multi-architecture subject requires its own exact-head CI and byte-binding receipt before it is source/build/package-qualified. Installation/runtime claims still require separate live DSM readback.
 
 Direct DSM readback after the native upgrade observed:
 - installed version `0.1.0-0007`, architecture `armada38x`;

@@ -1,10 +1,28 @@
 {
-  "arch": "armada38x",
-  "filename": "Tattler-armada38x-0.2.0-0003.spk",
-  "md5": "1d056bdabe3e7adecb333fdcd62e8450",
   "min_build": 72806,
   "package": "Tattler",
-  "sha256": "3e735b9957fb8852a07024706da37b21354e35a17a58b57765413a8c1bf944bb",
-  "size": 3092480,
-  "version": "0.2.0-0003"
+  "releases": [
+    {
+      "arch": "armv7",
+      "filename": "Tattler-armv7-0.2.0-0004.spk",
+      "md5": "8df996562d8c250938ad2d8d1d99a2dd",
+      "sha256": "42c836b1e9b0e6744e7a84132463529d14d258aa14fd92c05450882af67c40c8",
+      "size": 3092480
+    },
+    {
+      "arch": "armv8",
+      "filename": "Tattler-armv8-0.2.0-0004.spk",
+      "md5": "b6d253426a491ccd9948409c2a0a85a7",
+      "sha256": "bf2de670d925c50ebc7e2ea1cbe2b47092a7e50b3c49fa6a8256157d4fff508b",
+      "size": 2877440
+    },
+    {
+      "arch": "x86_64",
+      "filename": "Tattler-x86_64-0.2.0-0004.spk",
+      "md5": "271ce5ff41a47175e7c7ae536d7d28b7",
+      "sha256": "1c1612a803610978d194892a3a5653fcf5468e625a7273d668e4a58a973499f8",
+      "size": 3184640
+    }
+  ],
+  "version": "0.2.0-0004"
 }
