@@ -72,6 +72,7 @@ func main() {
 	local := localAddresses()
 	tr := tracker.New()
 	uiState := newUIState(statePath, *keepLogs)
+	scan := &networkScan{tracker: tr, state: uiState}
 	sysSampler := metrics.NewSampler(*procRoot)
 	windowsSampler := wincollect.New()
 	cache := make(map[uint64]model.ProcessInfo)
@@ -115,8 +116,7 @@ func main() {
 		log.Printf("initial connection scan warning: %v", err)
 	}
 	initialSeen := time.Now().UTC()
-	tr.BaselineAt(initial, initialSeen)
-	uiState.SetCurrent(tr.Annotate(initial))
+	scan.Accept(initial, err, initialSeen)
 
 	httpServer := &http.Server{
 		Addr: *listen, Handler: (&server.Server{State: uiState}).Handler(),
@@ -147,7 +147,10 @@ func main() {
 				log.Printf("connection scan warning: %v", err)
 			}
 			now := time.Now().UTC()
-			opened, closed := tr.DiffAt(current, now)
+			opened, closed := scan.Accept(current, err, now)
+			if err != nil {
+				continue // retain last fully sampled state, never invent disappearance events
+			}
 			events := make([]model.Event, 0, len(opened)+len(closed))
 			for _, c := range opened {
 				events = append(events, model.NewEvent(now, hostname, "open", source, c))
@@ -159,7 +162,6 @@ func main() {
 				log.Printf("journal append: %v", err)
 			}
 			uiState.Add(events...)
-			uiState.SetCurrent(tr.Annotate(current))
 			pruneCache(cache, current)
 		case now := <-metricsTicker.C:
 			systemSample, systemErr := sampleSystem(now.UTC())

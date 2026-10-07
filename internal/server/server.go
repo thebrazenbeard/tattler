@@ -1,7 +1,9 @@
 package server
 
 import (
+	"crypto/sha256"
 	_ "embed"
+	"encoding/hex"
 	"encoding/json"
 	"io"
 	"net/http"
@@ -16,23 +18,27 @@ import (
 )
 
 type State struct {
-	mu          sync.RWMutex
-	current     []model.Connection
-	recent      []model.Event
-	samples     []metrics.Sample
-	findings    []metrics.Finding
-	semantic    []model.SemanticObservation
-	max         int
-	sampleMax   int
-	semanticMax int
-	started     time.Time
-	source      string
+	mu                  sync.RWMutex
+	current             []model.Connection
+	recent              []model.Event
+	samples             []metrics.Sample
+	findings            []metrics.Finding
+	semantic            []model.SemanticObservation
+	max                 int
+	sampleMax           int
+	semanticMax         int
+	started             time.Time
+	source              string
+	networkScanState    string
+	lastScanAttempt     time.Time
+	lastCompleteScan    time.Time
+	partialScansSkipped uint64
 }
 
 func NewState(max int) *State {
 	return &State{
 		max: max, sampleMax: 900, semanticMax: max, started: time.Now().UTC(),
-		semantic: make([]model.SemanticObservation, 0),
+		semantic: make([]model.SemanticObservation, 0), networkScanState: "pending",
 	}
 }
 
@@ -40,6 +46,28 @@ func (s *State) SetSource(source string) {
 	s.mu.Lock()
 	s.source = source
 	s.mu.Unlock()
+}
+
+// NoteNetworkScan records attempted collection without exposing raw error paths.
+// A partial scan leaves current evidence unchanged until a full pass succeeds.
+func (s *State) NoteNetworkScan(at time.Time, complete bool) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.lastScanAttempt = at.UTC()
+	if complete {
+		s.networkScanState = "complete"
+		s.lastCompleteScan = at.UTC()
+	} else {
+		s.networkScanState = "incomplete"
+		s.partialScansSkipped++
+	}
+}
+
+func nullableScanTime(at time.Time) any {
+	if at.IsZero() {
+		return nil
+	}
+	return at
 }
 
 func (s *State) SetCurrent(v []model.Connection) {
@@ -120,13 +148,22 @@ func (s *Server) status(w http.ResponseWriter, _ *http.Request) {
 		"active_findings":      len(s.State.findings),
 		"semantic_events":      len(s.State.semantic),
 		"latest_system":        latest,
+		"network_scan": map[string]any{
+			"state":                    s.State.networkScanState,
+			"last_attempt_at":          nullableScanTime(s.State.lastScanAttempt),
+			"last_complete_at":         nullableScanTime(s.State.lastCompleteScan),
+			"incomplete_scans_skipped": s.State.partialScansSkipped,
+		},
 	})
 }
 
 type currentObservation struct {
 	model.Connection
-	FirstSeen  *time.Time `json:"first_seen,omitempty"`
-	AgeSeconds int64      `json:"age_seconds"`
+	FirstSeen           *time.Time `json:"first_seen,omitempty"`
+	AgeSeconds          int64      `json:"age_seconds"`
+	TrackingKey         string     `json:"tracking_key"`
+	IdentityBasis       string     `json:"identity_basis"`
+	SameTrackingKeyRows int        `json:"same_tracking_key_rows"`
 }
 
 func (s *Server) current(w http.ResponseWriter, _ *http.Request) {
@@ -135,8 +172,20 @@ func (s *Server) current(w http.ResponseWriter, _ *http.Request) {
 
 	now := time.Now().UTC()
 	out := make([]currentObservation, 0, len(s.State.current))
+	counts := make(map[string]int, len(s.State.current))
 	for _, c := range s.State.current {
-		item := currentObservation{Connection: c}
+		counts[c.Key()]++
+	}
+	for _, c := range s.State.current {
+		identity := c.Key()
+		sum := sha256.Sum256([]byte(identity))
+		basis := "endpoint_only"
+		if c.Inode != 0 {
+			basis = "inode_endpoint"
+		} else if c.Process.PID != 0 {
+			basis = "pid_endpoint_fallback"
+		}
+		item := currentObservation{Connection: c, TrackingKey: hex.EncodeToString(sum[:]), IdentityBasis: basis, SameTrackingKeyRows: counts[identity]}
 		if !c.FirstSeen.IsZero() {
 			first := c.FirstSeen.UTC()
 			item.FirstSeen = &first

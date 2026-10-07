@@ -42,6 +42,9 @@ func (t *Tracker) DiffAt(conns []model.Connection, at time.Time) (opened, closed
 	next := make(map[string]model.Connection, len(conns))
 	for _, c := range conns {
 		k := c.Key()
+		if _, seen := next[k]; seen {
+			continue // same tracking identity in one sample is not a second opening event
+		}
 		if previous, ok := t.state[k]; ok {
 			c.FirstSeen = previous.FirstSeen
 		} else {

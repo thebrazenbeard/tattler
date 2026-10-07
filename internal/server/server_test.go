@@ -252,3 +252,41 @@ func TestSemanticEventsEmptyCollectionIsJSONArray(t *testing.T) {
 		t.Fatalf("body=%q, want []", got)
 	}
 }
+
+func TestCurrentExposesTrackingCollisionWithoutSocketCountClaim(t *testing.T) {
+	var c model.Connection
+	if err := json.Unmarshal([]byte(`{"kind":"udp_endpoint","protocol":"udp","local":"0.0.0.0:5353","remote":"0.0.0.0:0","process":{"pid":42}}`), &c); err != nil {
+		t.Fatal(err)
+	}
+	other := c
+	other.Process.PID = 43
+	state := NewState(20)
+	state.SetCurrent([]model.Connection{c, c, other})
+	state.NoteNetworkScan(time.Now().UTC(), false)
+	srv := (&Server{State: state}).Handler()
+	result := httptest.NewRecorder()
+	srv.ServeHTTP(result, httptest.NewRequest(http.MethodGet, "/api/v1/current", nil))
+	var rows []map[string]any
+	if err := json.Unmarshal(result.Body.Bytes(), &rows); err != nil {
+		t.Fatal(err)
+	}
+	if len(rows) != 3 {
+		t.Fatalf("raw rows=%d, want 3", len(rows))
+	}
+	if rows[0]["tracking_key"] != rows[1]["tracking_key"] || rows[2]["tracking_key"] == rows[0]["tracking_key"] {
+		t.Fatal("tracking collision not distinguished")
+	}
+	if rows[0]["same_tracking_key_rows"] != float64(2) || rows[0]["identity_basis"] != "pid_endpoint_fallback" {
+		t.Fatalf("identity metadata=%v", rows[0])
+	}
+	result = httptest.NewRecorder()
+	srv.ServeHTTP(result, httptest.NewRequest(http.MethodGet, "/api/v1/status", nil))
+	var status map[string]any
+	if err := json.Unmarshal(result.Body.Bytes(), &status); err != nil {
+		t.Fatal(err)
+	}
+	scan := status["network_scan"].(map[string]any)
+	if scan["state"] != "incomplete" || scan["last_complete_at"] != nil || scan["incomplete_scans_skipped"] != float64(1) {
+		t.Fatalf("scan=%v", scan)
+	}
+}
