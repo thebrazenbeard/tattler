@@ -122,4 +122,3 @@ func evidenceFor(rules []portRule, port uint16, role string) []model.ProtocolEvi
 	}
 	return out
 }
-
