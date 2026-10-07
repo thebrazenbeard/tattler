@@ -68,12 +68,12 @@ class MultiArchSPKTests(unittest.TestCase):
             package_source = root / "package-source"
             manifest = update_package_source.stage_many(built, package_source, SPK)
 
-            self.assertEqual(manifest["version"], "0.2.0-0004")
+            self.assertEqual(manifest["version"], "0.2.0-0005")
             releases = {item["arch"]: item for item in manifest["releases"]}
             self.assertEqual(set(releases), {"x86_64", "armv7", "armv8"})
             for arch in releases:
                 filename = releases[arch]["filename"]
-                self.assertEqual(filename, f"Tattler-{arch}-0.2.0-0004.spk")
+                self.assertEqual(filename, f"Tattler-{arch}-0.2.0-0005.spk")
                 self.assertTrue((package_source / "public" / "releases" / filename).is_file())
 
             saved = json.loads((package_source / "release.json").read_text(encoding="utf-8"))

@@ -16,7 +16,7 @@ def spk_version():
 class ReleaseDocsTests(unittest.TestCase):
     def test_readme_uses_typed_observation_semantics(self):
         text = (ROOT / "README.md").read_text(encoding="utf-8")
-        for kind in ("tcp_session", "tcp_listener", "udp_endpoint"):
+        for kind in ("tcp_session", "tcp_listener", "udp_endpoint", "udp_flow"):
             self.assertIn(kind, text)
         self.assertNotIn("Windows UDP endpoint capture", text)
         self.assertNotIn("Unconnected inbound UDP is not represented as a connection", text)
@@ -41,7 +41,17 @@ class ReleaseDocsTests(unittest.TestCase):
         text = (ROOT / "README.md").read_text(encoding="utf-8")
         status = re.search(r"Current source/package candidate.*?(?=\n## |\Z)", text, re.S)
         self.assertIsNotNone(status)
-        if spk_version() == "0.2.0-0004":
+        if spk_version() == "0.2.0-0005":
+            self.assertIn("PROTOCOL_EVIDENCE_V1_SOURCE", status.group(0))
+            self.assertIn("SEMANTIC_EVENTS_V1_SOURCE", status.group(0))
+            self.assertIn("MULTIARCH_X86_64_ARMV7_ARMV8_SOURCE", status.group(0))
+            self.assertIn("PACKAGE_SOURCE_BOUND_TO_CI_ARTIFACT", status.group(0))
+            self.assertNotIn("PACKAGE_SOURCE_REBIND_PENDING", status.group(0))
+            self.assertNotIn("EXACT_HEAD_CI_PENDING", status.group(0))
+            self.assertIn("EXACT_HEAD_CI_RECEIPT_RECORDED", status.group(0))
+            self.assertIn("docs/PUBLIC_RELEASE_QUALIFICATION_20261006_V0005.md", status.group(0))
+            self.assertIn("docs/PROTOCOL_EVIDENCE_V1.md", status.group(0))
+        elif spk_version() == "0.2.0-0004":
             self.assertIn("MULTIARCH_X86_64_ARMV7_ARMV8_SOURCE", status.group(0))
             self.assertIn("PACKAGE_SOURCE_BOUND_TO_CI_ARTIFACT", status.group(0))
             self.assertNotIn("PACKAGE_SOURCE_REBIND_PENDING", status.group(0))

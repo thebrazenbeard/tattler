@@ -21,6 +21,7 @@ import (
 	"github.com/thebrazenbeard/tattler/internal/model"
 	"github.com/thebrazenbeard/tattler/internal/procmap"
 	"github.com/thebrazenbeard/tattler/internal/procnet"
+	"github.com/thebrazenbeard/tattler/internal/protocol"
 	"github.com/thebrazenbeard/tattler/internal/server"
 	"github.com/thebrazenbeard/tattler/internal/store"
 	"github.com/thebrazenbeard/tattler/internal/tracker"
@@ -86,11 +87,21 @@ func main() {
 		return sysSampler.Sample(at)
 	}
 	readConnections := func() ([]model.Connection, error) {
+		var (
+			conns []model.Connection
+			err   error
+		)
 		if runtime.GOOS == "windows" {
-			return windowsSampler.Connections()
+			conns, err = windowsSampler.Connections()
+		} else {
+			var snap procnet.Snapshot
+			snap, err = procnet.Read(*procRoot)
+			conns = decorate(snap, *procRoot, owners, local, cache)
 		}
-		snap, err := procnet.Read(*procRoot)
-		return decorate(snap, *procRoot, owners, local, cache), err
+		for i := range conns {
+			conns[i].ProtocolEvidence = protocol.Classify(conns[i])
+		}
+		return conns, err
 	}
 	if sample, sampleErr := sampleSystem(time.Now().UTC()); sampleErr != nil {
 		log.Printf("initial system sample warning: %v", sampleErr)
@@ -206,7 +217,7 @@ func decorate(snap procnet.Snapshot, procRoot string, owners map[uint32]string, 
 			c.Direction = tracker.Classify(c, snap.Listeners, local)
 		case model.ObservationTCPListener:
 			c.Direction = "listen"
-		case model.ObservationUDPEndpoint:
+		case model.ObservationUDPEndpoint, model.ObservationUDPFlow:
 			c.Direction = ""
 		}
 		if owner, ok := owners[c.UID]; ok {

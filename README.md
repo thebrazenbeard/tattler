@@ -14,13 +14,16 @@ Tattler combines read-only system/process evidence with sampled network activity
 
 On Linux/DSM, system evidence comes from kernel `/proc` interfaces and includes CPU/load, I/O wait, memory and swap pressure, major faults, physical-disk rates/latency/queue evidence, Linux MD state, and bounded top-process evidence where readable.
 
-Network observations use three explicit kinds:
+Network observations use four explicit kinds:
 
 - `tcp_session`: a sampled non-listening TCP row with local/remote endpoints and state;
 - `tcp_listener`: a sampled local TCP listener; direction is `listen`;
-- `udp_endpoint`: a sampled bound UDP endpoint with ownership evidence when available. A UDP endpoint does not prove that a datagram was sent or received and does not establish a remote DNS, QUIC, or other UDP peer.
+- `udp_endpoint`: a sampled bound UDP endpoint with no proven remote peer;
+- `udp_flow`: a Linux sampled connected-UDP row for which the kernel table exposes a nonzero remote endpoint.
 
-On Linux these observations come from `/proc/net/{tcp,tcp6,udp,udp6}`. On Windows they come from IP Helper TCP/UDP OWNER_PID tables. Exact process attribution remains best-effort when the operating system cannot prove or expose it.
+On Linux these observations come from `/proc/net/{tcp,tcp6,udp,udp6}`. On Windows they come from IP Helper TCP/UDP OWNER_PID tables. Windows IP Helper UDP rows do not expose remote peers, so Windows UDP remains `udp_endpoint` evidence until a stronger qualified collector such as ETW/WFP is added. Exact process attribution remains best-effort when the operating system cannot prove or expose it.
+
+Application protocol is represented separately from transport. Tattler can attach `protocol_evidence` such as `http ?`, `https ?`, `tls ?`, `quic ?`, `dns ?`, `dot ?`, `doq ?`, `mdns ?`, `smb ?`, and `nfs ?`. The `?` means the evidence is heuristic, currently derived from a well-known local or remote service port. UDP/443 therefore means “QUIC is plausible,” not “HTTP/3 was observed.”
 
 The journal persists versioned `open` / `close` observation events. Those names mean “appeared between samples” and “disappeared between samples”; they are not claims that Tattler observed a TCP SYN/FIN, a UDP datagram, or kernel lifecycle event.
 
@@ -33,6 +36,7 @@ The loopback-only dashboard/API exposes:
 - `/api/v1/findings`
 - `/api/v1/current`
 - `/api/v1/events`
+- `/api/v1/semantic-events` (GET recent session-scoped reports; POST local reported HTTP/webhook/WebSocket/gRPC metadata)
 
 ## Native Windows agent
 
@@ -82,6 +86,45 @@ go install github.com/wailsapp/wails/v2/cmd/wails@v2.14.0
 
 CI qualifies and publishes the Windows agent and desktop companion as separate workflow artifacts. The desktop artifact is a bundle containing both `tattler-desktop-windows-amd64.exe` and its required sibling `tattler-windows-amd64.exe`; extract and keep those two files together. The companion launches that sibling agent when no healthy loopback agent is already running. Building either artifact does not install or activate it.
 
+## Protocol and semantic evidence
+
+Socket sampling and application semantics are separate evidence layers.
+
+Socket-derived protocol hints are always marked `confidence=heuristic` with `source=well_known_port`. Tattler does not inspect payloads or decrypt TLS/QUIC. In particular, UDP/443 does not prove HTTP/3, and TCP/443 does not prove an HTTP request occurred.
+
+Local applications, reverse proxies, webhook workers, or adapters can report actual transaction metadata to the loopback-only semantic endpoint:
+
+```text
+POST http://127.0.0.1:9147/api/v1/semantic-events
+Content-Type: application/json
+```
+
+Example webhook delivery:
+
+```json
+{
+  "kind": "webhook_delivery",
+  "protocol": "https",
+  "direction": "outbound",
+  "reporter": "my-webhook-worker",
+  "peer": "hooks.example.com:443",
+  "method": "POST",
+  "route": "/hooks/github",
+  "status": 202,
+  "duration_ms": 184,
+  "provider": "github",
+  "event_type": "push",
+  "delivery_id": "delivery-123",
+  "retry": 1,
+  "signature_valid": true
+}
+```
+
+Reported semantic events use `confidence=reported`; Tattler records what the local reporter asserted and does not pretend it independently reconstructed the encrypted transaction. The schema intentionally excludes request/response bodies, arbitrary headers, cookies, authorization values, raw URLs, query strings, fragments, and arbitrary error messages. `route` must be a low-cardinality path/template, and `error_type` is a bounded token such as `timeout`.
+
+Semantic events are memory-bounded and session-scoped in V1. They are not mixed into the durable connection-event JSONL journal.
+
+See `docs/PROTOCOL_EVIDENCE_V1.md` for the evidence contract, protocol mappings, privacy boundary, and future ETW/conntrack/eBPF extension path.
 
 ## DSM privilege model
 
@@ -144,7 +187,7 @@ The same source candidate also closes several journal-durability gaps without ch
 
 A leftover `.rotate-oldest` still blocks later rotation rather than being guessed away automatically. That is intentional fail-closed behavior: the source preserves ambiguous recovery evidence instead of deleting it without enough state to prove the prior rotation completed.
 
-`0.2.0-0001` was the prior SOURCE/BUILD/PACKAGE/EXACT-HEAD-CI-qualified candidate. `0.2.0-0002` added the shared Windows/native-observation work. `0.2.0-0003` hardened DSM service lifecycle behavior. The current package revision is `0.2.0-0004`, which keeps those lifecycle protections and adds generic DSM package artifacts for x86_64, ARMv7, and ARMv8/AArch64. The live DS216 remains on runtime-qualified `0.1.0-0007` until a separate install/upgrade is explicitly authorized and read back.
+`0.2.0-0001` was the prior SOURCE/BUILD/PACKAGE/EXACT-HEAD-CI-qualified candidate. `0.2.0-0002` added the shared Windows/native-observation work. `0.2.0-0003` hardened DSM service lifecycle behavior. `0.2.0-0004` added generic x86_64, ARMv7, and ARMv8/AArch64 DSM packages. The current package revision is `0.2.0-0005`, which adds protocol evidence, Linux connected-UDP `udp_flow` observations, and the loopback semantic-event API while retaining the `0004` multi-architecture/lifecycle protections. The live DS216 remains on runtime-qualified `0.1.0-0007` until a separate install/upgrade is explicitly authorized and read back.
 
 ## Native DSM updates
 
@@ -184,15 +227,29 @@ The `0.2.0-0004` release keeps the `0.2.0-0003` lifecycle hardening and publishe
 
 Each SPK contains a binary whose ELF machine must match the SPK's declared generic architecture. Package Source routes model-specific Synology platform identifiers to the matching generic artifact instead of publishing one model-specific SPK as though it were universal.
 
+### DSM protocol-evidence revision 0.2.0-0005
+
+The `0.2.0-0005` source keeps the three generic DSM architectures and adds:
+
+- `udp_flow` for Linux connected UDP rows whose kernel table exposes a remote peer;
+- separate `protocol_evidence` with explicit confidence/source instead of overwriting the transport protocol;
+- heuristic service/protocol hints for HTTP/HTTPS/TLS/QUIC/DNS/DoT/DoQ/mDNS/NTP/SSDP/SNMP/DHCP/SSH/SMB/NFS;
+- a loopback-only reported semantic-event API for HTTP transactions, webhook deliveries, WebSocket sessions, and gRPC RPCs;
+- desktop and browser UI surfaces that separate transport from protocol evidence and display semantic activity.
+
+The `0005` package has been rebuilt independently for x86_64, ARMv7, and ARMv8 and Package Source is rebound to the exact first-pass CI artifacts. It does not inherit `0004` package qualification; the rebinding commit still requires exact-head CI before `0005` is qualified.
+
 ## Performance posture
 
 The DS216 has a very small resource budget. Network observation sampling defaults to 1 second, while the more expensive system/process scan defaults to 5 seconds. The root agent has no third-party Go dependencies; Wails dependencies are isolated to the optional `desktop/` module.
 
 ## Evidence ceiling
 
-Tattler is a sampling diagnostic agent, not a packet sniffer or kernel tracing engine. Very short TCP sessions or endpoint changes can occur between samples. A retained UDP endpoint proves that the operating system exposed a bound endpoint during a sample; it does not prove datagram traffic, a remote peer, DNS activity, or QUIC activity.
+Tattler is a sampling diagnostic agent, not a packet sniffer or kernel tracing engine. Very short TCP sessions or endpoint changes can occur between samples. A retained `udp_endpoint` proves that the operating system exposed a bound endpoint during a sample; it does not prove datagram traffic or a remote peer. A Linux `udp_flow` proves that the sampled kernel table exposed a nonzero remote UDP endpoint, not that Tattler observed a datagram or handshake.
 
-Exact PID/process attribution can race process exit or be blocked by permissions. UID/account ownership is weaker than exact PID attribution and is reported separately. Linux namespaces and NAT can also limit what the host view proves. Windows IP Helper endpoint tables do not substitute for ETW or packet capture.
+Port-derived application labels are heuristics, not protocol confirmation. Tattler does not claim HTTP/3 from UDP/443, does not claim an HTTP request merely from TCP/443, and does not decrypt TLS or QUIC. Reported semantic events reflect what a local reporter asserted and are not independently reconstructed by Tattler.
+
+Exact PID/process attribution can race process exit or be blocked by permissions. UID/account ownership is weaker than exact PID attribution and is reported separately. Linux namespaces and NAT can also limit what the host view proves. Windows IP Helper endpoint tables do not expose remote UDP peers and do not substitute for ETW, WFP-derived qualified flow evidence, or packet capture.
 
 ## Build and verification
 
@@ -241,11 +298,11 @@ Current live runtime subject `0.1.0-0007`:
 
 `PACKAGE_USER_ONLY / UID_OWNER_ATTRIBUTION_IMPLEMENTED / PACKAGE_SOURCE_LIVE / NATIVE_PACKAGE_CENTER_UPGRADE_PASS / LIVE_DAEMON_PASS / LOOPBACK_API_PASS / UID_OWNER_ATTRIBUTION_RUNTIME_PASS`
 
-Current source/package candidate `0.2.0-0004`:
+Current source/package candidate `0.2.0-0005`:
 
-`TYPED_TCP_SESSION_LISTENER_UDP_ENDPOINT_SOURCE / WINDOWS_TCP_UDP_OWNER_PID_SOURCE / WINDOWS_DESKTOP_COMPANION_SOURCE / DISK_PRESSURE_EVIDENCE_IMPLEMENTED / JOURNAL_RECOVERY_HARDENED / DSM_PID_IDENTITY_GUARD / LOOPBACK_LISTENER_READINESS / ATOMIC_PIDFILE / BOUNDED_SERVICE_LOG / PACKAGE_STATE_MODE_0700 / PACKAGE_LOG_MODE_0600 / PACKAGE_USER_ONLY / MULTIARCH_X86_64_ARMV7_ARMV8_SOURCE / PACKAGE_SOURCE_BOUND_TO_CI_ARTIFACT / EXACT_HEAD_CI_RECEIPT_RECORDED / NOT_INSTALLED_ON_DSM / DSM_RUNTIME_NOT_QUALIFIED`
+`TYPED_TCP_SESSION_LISTENER_UDP_ENDPOINT_UDP_FLOW_SOURCE / PROTOCOL_EVIDENCE_V1_SOURCE / SEMANTIC_EVENTS_V1_SOURCE / WINDOWS_TCP_UDP_OWNER_PID_SOURCE / WINDOWS_DESKTOP_COMPANION_SOURCE / DISK_PRESSURE_EVIDENCE_IMPLEMENTED / JOURNAL_RECOVERY_HARDENED / DSM_PID_IDENTITY_GUARD / LOOPBACK_LISTENER_READINESS / ATOMIC_PIDFILE / BOUNDED_SERVICE_LOG / PACKAGE_STATE_MODE_0700 / PACKAGE_LOG_MODE_0600 / PACKAGE_USER_ONLY / MULTIARCH_X86_64_ARMV7_ARMV8_SOURCE / PACKAGE_SOURCE_BOUND_TO_CI_ARTIFACT / EXACT_HEAD_CI_RECEIPT_RECORDED / NOT_INSTALLED_ON_DSM / DSM_RUNTIME_NOT_QUALIFIED`
 
-The earlier `0.2.0-0002` and `0.2.0-0003` qualification receipts remain in `docs/PUBLIC_RELEASE_QUALIFICATION_20261006.md` and `docs/PUBLIC_RELEASE_QUALIFICATION_20261006_V0003.md`. Exact source/build/package qualification for the `0.2.0-0004` multi-architecture package subject is recorded in `docs/PUBLIC_RELEASE_QUALIFICATION_20261006_V0004.md`. Installation/runtime claims still require separate live DSM readback.
+The earlier `0.2.0-0002`, `0.2.0-0003`, and `0.2.0-0004` qualification receipts remain in `docs/PUBLIC_RELEASE_QUALIFICATION_20261006.md`, `docs/PUBLIC_RELEASE_QUALIFICATION_20261006_V0003.md`, and `docs/PUBLIC_RELEASE_QUALIFICATION_20261006_V0004.md`. Exact source/build/package qualification for the `0.2.0-0005` protocol/semantic subject is recorded in `docs/PUBLIC_RELEASE_QUALIFICATION_20261006_V0005.md`. See `docs/PROTOCOL_EVIDENCE_V1.md` for the evidence contract. Installation/runtime claims still require separate live DSM readback.
 
 Direct DSM readback after the native upgrade observed:
 - installed version `0.1.0-0007`, architecture `armada38x`;

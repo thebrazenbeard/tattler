@@ -18,20 +18,37 @@ const (
 	ObservationTCPSession  = "tcp_session"
 	ObservationTCPListener = "tcp_listener"
 	ObservationUDPEndpoint = "udp_endpoint"
+	ObservationUDPFlow     = "udp_flow"
+
+	ProtocolConfidenceHeuristic = "heuristic"
+	ProtocolConfidenceObserved  = "observed"
+	ProtocolConfidenceReported  = "reported"
+
+	ProtocolSourceWellKnownPort = "well_known_port"
+	ProtocolSourceReported      = "reported"
 )
 
+type ProtocolEvidence struct {
+	Name       string `json:"name"`
+	Layer      string `json:"layer,omitempty"`
+	Confidence string `json:"confidence"`
+	Source     string `json:"source"`
+	Reason     string `json:"reason,omitempty"`
+}
+
 type Connection struct {
-	Kind      string         `json:"kind,omitempty"`
-	Protocol  string         `json:"protocol"`
-	FirstSeen time.Time      `json:"-"`
-	Local     netip.AddrPort `json:"local"`
-	Remote    netip.AddrPort `json:"remote"`
-	State     string         `json:"state,omitempty"`
-	Direction string         `json:"direction,omitempty"`
-	Inode     uint64         `json:"inode,omitempty"`
-	UID       uint32         `json:"uid,omitempty"`
-	Owner     string         `json:"owner,omitempty"`
-	Process   ProcessInfo    `json:"process,omitempty"`
+	Kind             string             `json:"kind,omitempty"`
+	Protocol         string             `json:"protocol"`
+	ProtocolEvidence []ProtocolEvidence `json:"protocol_evidence,omitempty"`
+	FirstSeen        time.Time          `json:"-"`
+	Local            netip.AddrPort     `json:"local"`
+	Remote           netip.AddrPort     `json:"remote"`
+	State            string             `json:"state,omitempty"`
+	Direction        string             `json:"direction,omitempty"`
+	Inode            uint64             `json:"inode,omitempty"`
+	UID              uint32             `json:"uid,omitempty"`
+	Owner            string             `json:"owner,omitempty"`
+	Process          ProcessInfo        `json:"process,omitempty"`
 }
 
 func (c Connection) Key() string {

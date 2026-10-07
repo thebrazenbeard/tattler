@@ -84,6 +84,9 @@ func readTable(path, proto string, v6 bool) ([]model.Connection, error) {
 		inode, _ := strconv.ParseUint(fields[9], 10, 64)
 		state := fields[3]
 		kind := model.ObservationUDPEndpoint
+		if strings.HasPrefix(proto, "udp") && remote.Port() != 0 && remote.Addr().IsValid() && !remote.Addr().IsUnspecified() {
+			kind = model.ObservationUDPFlow
+		}
 		if strings.HasPrefix(proto, "tcp") {
 			if v, ok := tcpStates[state]; ok {
 				state = v

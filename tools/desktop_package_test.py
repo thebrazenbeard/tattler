@@ -29,3 +29,9 @@ class LiveAgeOrderingTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+class ProtocolEvidenceUITests(unittest.TestCase):
+    def test_desktop_shows_transport_protocol_evidence_and_semantic_activity(self):
+        text = (ROOT / "desktop" / "frontend" / "dist" / "index.html").read_text(encoding="utf-8")
+        for token in ("Transport", "Protocol evidence", "Semantic activity", "protocol_evidence", "semanticDetail", "s.semantic"):
+            self.assertIn(token, text)

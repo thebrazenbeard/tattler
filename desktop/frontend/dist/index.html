@@ -31,13 +31,16 @@ th,td{text-align:left;padding:8px 10px;border-bottom:1px solid #27313b;font-size
 <div class="card"><div class="label">Collector</div><div class="value" id="collector" style="font-size:15px">—</div></div>
 </div>
 <section><h2>Findings</h2><div id="findings" class="muted">None</div></section>
-<section><h2>Network activity</h2><div class="scroll"><table><thead><tr><th>Kind</th><th>Direction</th><th>Process</th><th>Protocol</th><th>Local</th><th>Remote</th><th title="Continuous time Tattler has observed this live endpoint">Observed for ↓</th><th>State</th></tr></thead><tbody id="current"></tbody></table></div></section>
+<section><h2>Network activity</h2><div class="scroll"><table><thead><tr><th>Kind</th><th>Direction</th><th>Process</th><th>Transport</th><th>Protocol evidence</th><th>Local</th><th>Remote</th><th title="Continuous time Tattler has observed this live endpoint">Observed for ↓</th><th>State</th></tr></thead><tbody id="current"></tbody></table></div></section>
+<section><h2>Semantic activity</h2><div class="scroll"><table><thead><tr><th>Observed</th><th>Kind</th><th>Protocol</th><th>Direction</th><th>Reporter</th><th>Peer</th><th>Route</th><th>Status</th><th>Duration</th><th>Detail</th></tr></thead><tbody id="semantic"></tbody></table></div></section>
 <section><h2>Recent observation events</h2><div class="scroll"><table><thead><tr><th>Observed</th><th>Event</th><th>Kind</th><th>Endpoint</th><th>Process</th></tr></thead><tbody id="events"></tbody></table></div></section>
 <script>
 const $=id=>document.getElementById(id);
 const esc=v=>String(v??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 const endpoint=v=>(!v||v==='0.0.0.0:0'||v==='[::]:0'||v==='invalid AddrPort')?'-':v;
 const proc=c=>((c.process&&c.process.name)||c.owner||'?')+((c.process&&c.process.pid)?' ('+c.process.pid+')':'');
+const protocolEvidence=c=>(c.protocol_evidence||[]).map(e=>e.name+(e.confidence==='heuristic'?' ?':'')).join(', ')||'-';
+const semanticDetail=e=>[e.provider,e.event_type,e.delivery_id,e.retry?'retry '+e.retry:'',e.error_type?'error='+e.error_type:''].filter(Boolean).join(' • ')||'-';
 const ageLabel=seconds=>{const n=Math.max(0,Number(seconds||0));if(n<60)return Math.floor(n)+'s';if(n<3600)return Math.floor(n/60)+'m '+Math.floor(n%60)+'s';if(n<86400)return Math.floor(n/3600)+'h '+Math.floor((n%3600)/60)+'m';return Math.floor(n/86400)+'d '+Math.floor((n%86400)/3600)+'h'};
 function render(s){
  const a=s.agent||{}; $('state').textContent=a.running?(a.managed?'Agent running • managed':'Agent running • attached'):(a.error||'Agent offline'); $('state').className='state '+(a.running?'ok':'bad');
@@ -46,7 +49,8 @@ function render(s){
  $('obs').textContent=st.current_observations??st.current_connections??0; $('collector').textContent=st.collector||'—';
  const fs=s.findings||[]; $('findings').innerHTML=fs.length?fs.map(f=>'<div class="finding"><b>'+esc((f.severity||'info').toUpperCase())+': '+esc(f.summary)+'</b><br><span class="muted">'+esc(f.evidence)+'</span></div>').join(''):'<span class="muted">None</span>';
  const current=[...(s.current||[])].sort((a,b)=>Number(b.age_seconds||0)-Number(a.age_seconds||0)||String(a.local||'').localeCompare(String(b.local||''))||String(a.remote||'').localeCompare(String(b.remote||''))||String((a.process||{}).pid||'').localeCompare(String((b.process||{}).pid||'')));
- $('current').innerHTML=current.map(c=>'<tr><td>'+esc(c.kind||'unknown')+'</td><td>'+esc(c.direction||'-')+'</td><td>'+esc(proc(c))+'</td><td>'+esc(c.protocol)+'</td><td><code>'+esc(c.local)+'</code></td><td><code>'+esc(endpoint(c.remote))+'</code></td><td>'+esc(ageLabel(c.age_seconds))+'</td><td>'+esc(c.state||'-')+'</td></tr>').join('');
+ $('current').innerHTML=current.map(c=>'<tr><td>'+esc(c.kind||'unknown')+'</td><td>'+esc(c.direction||'-')+'</td><td>'+esc(proc(c))+'</td><td>'+esc(c.protocol)+'</td><td>'+esc(protocolEvidence(c))+'</td><td><code>'+esc(c.local)+'</code></td><td><code>'+esc(endpoint(c.remote))+'</code></td><td>'+esc(ageLabel(c.age_seconds))+'</td><td>'+esc(c.state||'-')+'</td></tr>').join('');
+ $('semantic').innerHTML=(s.semantic||[]).slice().reverse().map(e=>'<tr><td>'+esc(e.observed_at||'')+'</td><td>'+esc(e.kind||'')+'</td><td>'+esc(e.protocol||'')+'</td><td>'+esc(e.direction||'-')+'</td><td>'+esc(e.reporter||'-')+'</td><td>'+esc(e.peer||'-')+'</td><td><code>'+esc(e.route||'-')+'</code></td><td>'+esc(e.status||'-')+'</td><td>'+esc(e.duration_ms?e.duration_ms+' ms':'-')+'</td><td>'+esc(semanticDetail(e))+'</td></tr>').join('');
  $('events').innerHTML=(s.events||[]).slice().reverse().map(e=>{const c=e.connection||{};return '<tr><td>'+esc(e.observed_at||'')+'</td><td>'+esc(e.kind||'')+'</td><td>'+esc(c.kind||'unknown')+'</td><td><code>'+esc(c.local||'')+'</code></td><td>'+esc(proc(c))+'</td></tr>'}).join('');
 }
 let startError='';
