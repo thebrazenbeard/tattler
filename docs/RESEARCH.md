@@ -45,3 +45,10 @@ Additional public categories surveyed included Falco/Tracee-style kernel event m
 5. Rate findings must come from counter deltas; cumulative or occupied state is not silently promoted into current pressure.
 6. Connection metadata is sensitive; UI/API defaults to loopback only.
 7. SMART, conntrack, pcap/eBPF, remote export, and remediation are separate later capabilities with their own permission and evidence gates.
+
+
+## 2026-10-07 ChatGPT reasoning-surface case study
+
+The protocol-evidence Windows artifact was used in a controlled same-task comparison of Desktop High, Desktop Work Ultra, and Firefox Work Max. The study demonstrates the intended evidence boundary: Tattler can describe local transport/process observations and preserve heuristic protocol evidence without turning those signals into claims about hidden model identity, cloud worker count, or reasoning tier.
+
+See `CHATGPT_REASONING_SURFACE_CASE_STUDY_20261007.md`.
