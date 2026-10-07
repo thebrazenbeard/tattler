@@ -237,7 +237,7 @@ The `0.2.0-0005` source keeps the three generic DSM architectures and adds:
 - a loopback-only reported semantic-event API for HTTP transactions, webhook deliveries, WebSocket sessions, and gRPC RPCs;
 - desktop and browser UI surfaces that separate transport from protocol evidence and display semantic activity.
 
-The `0005` package must be rebuilt and rebound independently for x86_64, ARMv7, and ARMv8. It does not inherit `0004` package qualification.
+The `0005` package has been rebuilt independently for x86_64, ARMv7, and ARMv8 and Package Source is rebound to the exact first-pass CI artifacts. It does not inherit `0004` package qualification; the rebinding commit still requires exact-head CI before `0005` is qualified.
 
 ## Performance posture
 
@@ -300,9 +300,9 @@ Current live runtime subject `0.1.0-0007`:
 
 Current source/package candidate `0.2.0-0005`:
 
-`TYPED_TCP_SESSION_LISTENER_UDP_ENDPOINT_UDP_FLOW_SOURCE / PROTOCOL_EVIDENCE_V1_SOURCE / SEMANTIC_EVENTS_V1_SOURCE / WINDOWS_TCP_UDP_OWNER_PID_SOURCE / WINDOWS_DESKTOP_COMPANION_SOURCE / DISK_PRESSURE_EVIDENCE_IMPLEMENTED / JOURNAL_RECOVERY_HARDENED / DSM_PID_IDENTITY_GUARD / LOOPBACK_LISTENER_READINESS / ATOMIC_PIDFILE / BOUNDED_SERVICE_LOG / PACKAGE_STATE_MODE_0700 / PACKAGE_LOG_MODE_0600 / PACKAGE_USER_ONLY / MULTIARCH_X86_64_ARMV7_ARMV8_SOURCE / PACKAGE_SOURCE_REBIND_PENDING / EXACT_HEAD_CI_PENDING / NOT_INSTALLED_ON_DSM / DSM_RUNTIME_NOT_QUALIFIED`
+`TYPED_TCP_SESSION_LISTENER_UDP_ENDPOINT_UDP_FLOW_SOURCE / PROTOCOL_EVIDENCE_V1_SOURCE / SEMANTIC_EVENTS_V1_SOURCE / WINDOWS_TCP_UDP_OWNER_PID_SOURCE / WINDOWS_DESKTOP_COMPANION_SOURCE / DISK_PRESSURE_EVIDENCE_IMPLEMENTED / JOURNAL_RECOVERY_HARDENED / DSM_PID_IDENTITY_GUARD / LOOPBACK_LISTENER_READINESS / ATOMIC_PIDFILE / BOUNDED_SERVICE_LOG / PACKAGE_STATE_MODE_0700 / PACKAGE_LOG_MODE_0600 / PACKAGE_USER_ONLY / MULTIARCH_X86_64_ARMV7_ARMV8_SOURCE / PACKAGE_SOURCE_BOUND_TO_CI_ARTIFACT / EXACT_HEAD_CI_PENDING / NOT_INSTALLED_ON_DSM / DSM_RUNTIME_NOT_QUALIFIED`
 
-The earlier `0.2.0-0002`, `0.2.0-0003`, and `0.2.0-0004` qualification receipts remain in `docs/PUBLIC_RELEASE_QUALIFICATION_20261006.md`, `docs/PUBLIC_RELEASE_QUALIFICATION_20261006_V0003.md`, and `docs/PUBLIC_RELEASE_QUALIFICATION_20261006_V0004.md`. The `0.2.0-0005` protocol/semantic subject requires fresh exact-head CI and three-architecture Package Source rebinding before it is source/build/package-qualified. See `docs/PROTOCOL_EVIDENCE_V1.md`. Installation/runtime claims still require separate live DSM readback.
+The earlier `0.2.0-0002`, `0.2.0-0003`, and `0.2.0-0004` qualification receipts remain in `docs/PUBLIC_RELEASE_QUALIFICATION_20261006.md`, `docs/PUBLIC_RELEASE_QUALIFICATION_20261006_V0003.md`, and `docs/PUBLIC_RELEASE_QUALIFICATION_20261006_V0004.md`. Package Source for `0.2.0-0005` is now rebound to the exact first-pass CI artifacts; the protocol/semantic subject still requires successful exact-head CI on that rebinding commit before it is source/build/package-qualified. See `docs/PROTOCOL_EVIDENCE_V1.md`. Installation/runtime claims still require separate live DSM readback.
 
 Direct DSM readback after the native upgrade observed:
 - installed version `0.1.0-0007`, architecture `armada38x`;
