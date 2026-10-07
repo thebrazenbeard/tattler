@@ -4,25 +4,25 @@
   "releases": [
     {
       "arch": "armv7",
-      "filename": "Tattler-armv7-0.2.0-0004.spk",
-      "md5": "535701813fa85955f738c2cb1b8ed4a7",
-      "sha256": "c989e7022320afa45eef90ca05afcde1008921e9c095838070ce6acd5e6c0461",
-      "size": 3092480
+      "filename": "Tattler-armv7-0.2.0-0005.spk",
+      "md5": "75c6f2aede42b6c5221b606fa299ab88",
+      "sha256": "4d88e16ff5f30bb711ab07133950d1a45badb371d21f4270b30bbaf333862d64",
+      "size": 3102720
     },
     {
       "arch": "armv8",
-      "filename": "Tattler-armv8-0.2.0-0004.spk",
-      "md5": "7e23c8700bdede68e0b394c59670fb41",
-      "sha256": "cc78228b00515e4426dd8f9838e261168f0181edf672336892398282e0c170f1",
-      "size": 2877440
+      "filename": "Tattler-armv8-0.2.0-0005.spk",
+      "md5": "c2b6fed3b1169e157a8a3b4e51917746",
+      "sha256": "6932c45b4594df81a95a20fb2aaa453558cb768a2e0f44e6f6b3e92d576ece61",
+      "size": 2887680
     },
     {
       "arch": "x86_64",
-      "filename": "Tattler-x86_64-0.2.0-0004.spk",
-      "md5": "8643669f8428b6bcecc3a5c7a06b90ee",
-      "sha256": "08b0f3cba03eadb87ca7a996ad87c0eeb066641df1b8ec81699d9b74db54e515",
-      "size": 3184640
+      "filename": "Tattler-x86_64-0.2.0-0005.spk",
+      "md5": "eb49c8558e35c07648ec9d87ce0838f7",
+      "sha256": "e5de8ef9e0779123d6f9209802e830463a2b84c76c8b5cbf6eefe6d6b50124f3",
+      "size": 3194880
     }
   ],
-  "version": "0.2.0-0004"
+  "version": "0.2.0-0005"
 }

@@ -3,29 +3,37 @@ package server
 import (
 	_ "embed"
 	"encoding/json"
+	"io"
 	"net/http"
 	"strconv"
+	"strings"
 	"sync"
 	"time"
+	"unicode"
 
 	"github.com/thebrazenbeard/tattler/internal/metrics"
 	"github.com/thebrazenbeard/tattler/internal/model"
 )
 
 type State struct {
-	mu        sync.RWMutex
-	current   []model.Connection
-	recent    []model.Event
-	samples   []metrics.Sample
-	findings  []metrics.Finding
-	max       int
-	sampleMax int
-	started   time.Time
-	source    string
+	mu          sync.RWMutex
+	current     []model.Connection
+	recent      []model.Event
+	samples     []metrics.Sample
+	findings    []metrics.Finding
+	semantic    []model.SemanticObservation
+	max         int
+	sampleMax   int
+	semanticMax int
+	started     time.Time
+	source      string
 }
 
 func NewState(max int) *State {
-	return &State{max: max, sampleMax: 900, started: time.Now().UTC()}
+	return &State{
+		max: max, sampleMax: 900, semanticMax: max, started: time.Now().UTC(),
+		semantic: make([]model.SemanticObservation, 0),
+	}
 }
 
 func (s *State) SetSource(source string) {
@@ -59,6 +67,15 @@ func (s *State) AddSystem(sample metrics.Sample, findings []metrics.Finding) {
 	s.findings = append([]metrics.Finding(nil), findings...)
 }
 
+func (s *State) AddSemantic(events ...model.SemanticObservation) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.semantic = append(s.semantic, events...)
+	if len(s.semantic) > s.semanticMax {
+		s.semantic = append([]model.SemanticObservation(nil), s.semantic[len(s.semantic)-s.semanticMax:]...)
+	}
+}
+
 //go:embed tattler-icon.png
 var tattlerIcon []byte
 
@@ -72,6 +89,7 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("/api/v1/events", s.events)
 	mux.HandleFunc("/api/v1/system", s.system)
 	mux.HandleFunc("/api/v1/findings", s.findings)
+	mux.HandleFunc("/api/v1/semantic-events", s.semanticEvents)
 	mux.HandleFunc("/assets/tattler-icon.png", s.icon)
 	mux.HandleFunc("/", s.index)
 	return mux
@@ -100,6 +118,7 @@ func (s *Server) status(w http.ResponseWriter, _ *http.Request) {
 		"recent_events":        len(s.State.recent),
 		"system_samples":       len(s.State.samples),
 		"active_findings":      len(s.State.findings),
+		"semantic_events":      len(s.State.semantic),
 		"latest_system":        latest,
 	})
 }
@@ -159,6 +178,123 @@ func (s *Server) findings(w http.ResponseWriter, _ *http.Request) {
 	writeJSON(w, s.State.findings)
 }
 
+func (s *Server) semanticEvents(w http.ResponseWriter, r *http.Request) {
+	switch r.Method {
+	case http.MethodGet:
+		limit := boundedLimit(r, 200, 5000)
+		s.State.mu.RLock()
+		defer s.State.mu.RUnlock()
+		start := len(s.State.semantic) - limit
+		if start < 0 {
+			start = 0
+		}
+		writeJSON(w, s.State.semantic[start:])
+	case http.MethodPost:
+		contentType := strings.ToLower(strings.TrimSpace(strings.Split(r.Header.Get("Content-Type"), ";")[0]))
+		if contentType != "application/json" {
+			http.Error(w, "semantic events require application/json", http.StatusUnsupportedMediaType)
+			return
+		}
+		r.Body = http.MaxBytesReader(w, r.Body, 64<<10)
+		dec := json.NewDecoder(r.Body)
+		dec.DisallowUnknownFields()
+		var in model.SemanticObservation
+		if err := dec.Decode(&in); err != nil {
+			http.Error(w, "invalid semantic event: "+err.Error(), http.StatusBadRequest)
+			return
+		}
+		if err := dec.Decode(&struct{}{}); err != io.EOF {
+			http.Error(w, "invalid semantic event: trailing JSON", http.StatusBadRequest)
+			return
+		}
+		normalizeSemantic(&in)
+		if msg := validateSemantic(in); msg != "" {
+			http.Error(w, msg, http.StatusBadRequest)
+			return
+		}
+		event := model.NewSemanticObservation(time.Now().UTC(), in)
+		s.State.AddSemantic(event)
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusAccepted)
+		_ = json.NewEncoder(w).Encode(event)
+	default:
+		w.Header().Set("Allow", "GET, POST")
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+	}
+}
+
+func normalizeSemantic(in *model.SemanticObservation) {
+	in.Kind = strings.ToLower(strings.TrimSpace(in.Kind))
+	in.Protocol = normalizeReportedProtocol(in.Protocol)
+	in.Direction = strings.ToLower(strings.TrimSpace(in.Direction))
+	in.Peer = strings.TrimSpace(in.Peer)
+	in.Method = strings.ToUpper(strings.TrimSpace(in.Method))
+	in.Route = strings.TrimSpace(in.Route)
+	in.Reporter = strings.TrimSpace(in.Reporter)
+	in.Provider = strings.TrimSpace(in.Provider)
+	in.EventType = strings.TrimSpace(in.EventType)
+	in.DeliveryID = strings.TrimSpace(in.DeliveryID)
+	in.ErrorType = strings.ToLower(strings.TrimSpace(in.ErrorType))
+}
+
+func normalizeReportedProtocol(raw string) string {
+	switch strings.ToLower(strings.TrimSpace(raw)) {
+	case "http/1", "http/1.0", "http/1.1", "http1":
+		return "http1"
+	case "http/2", "h2", "http2":
+		return "http2"
+	case "http/3", "h3", "http3":
+		return "http3"
+	case "ws", "websocket":
+		return "websocket"
+	case "wss", "websocket_tls":
+		return "websocket_tls"
+	default:
+		return strings.ToLower(strings.TrimSpace(raw))
+	}
+}
+
+func validateSemantic(in model.SemanticObservation) string {
+	switch in.Kind {
+	case model.SemanticHTTPTransaction, model.SemanticWebhookDelivery, model.SemanticWebSocketSession, model.SemanticGRPCRPC:
+	default:
+		return "unsupported semantic event kind"
+	}
+	switch in.Protocol {
+	case "http", "https", "http1", "http2", "http3", "websocket", "websocket_tls", "grpc", "grpcs":
+	default:
+		return "unsupported reported protocol"
+	}
+	if in.Direction != "" && in.Direction != "inbound" && in.Direction != "outbound" {
+		return "direction must be inbound or outbound"
+	}
+	if len(in.Peer) > 253 || strings.ContainsAny(in.Peer, "/?#") {
+		return "peer must be a host[:port], not a URL"
+	}
+	if len(in.Method) > 16 || strings.IndexFunc(in.Method, func(r rune) bool { return unicode.IsSpace(r) || unicode.IsControl(r) }) >= 0 {
+		return "method is invalid"
+	}
+	if len(in.Route) > 256 || strings.Contains(in.Route, "?") || strings.Contains(in.Route, "#") || strings.Contains(in.Route, "://") {
+		return "route must be a low-cardinality route/template without query, fragment, or URL scheme"
+	}
+	if in.Status != 0 && (in.Status < 100 || in.Status > 599) {
+		return "status must be an HTTP status code"
+	}
+	if in.DurationMS < 0 || in.BytesIn < 0 || in.BytesOut < 0 || in.Retry < 0 {
+		return "duration, byte counts, and retry must be non-negative"
+	}
+	if len(in.Reporter) > 128 || len(in.Provider) > 128 || len(in.EventType) > 128 || len(in.DeliveryID) > 256 || len(in.ErrorType) > 128 {
+		return "semantic metadata exceeds size limits"
+	}
+	if strings.IndexFunc(in.ErrorType, func(r rune) bool { return unicode.IsSpace(r) || unicode.IsControl(r) }) >= 0 {
+		return "error_type must be a low-cardinality token"
+	}
+	if in.Kind == model.SemanticWebhookDelivery && in.Method == "" {
+		return "webhook_delivery requires method"
+	}
+	return ""
+}
+
 func boundedLimit(r *http.Request, fallback, ceiling int) int {
 	limit := fallback
 	if raw := r.URL.Query().Get("limit"); raw != "" {
@@ -200,7 +336,8 @@ th,td{padding:7px;border-bottom:1px solid #333;text-align:left}code{color:#9fe}
 <div class="card"><div>Memory available</div><div class="big" id="mem">-</div></div>
 <div class="card"><div>Load 1m</div><div class="big" id="load">-</div></div></div>
 <h2>Findings</h2><div id="findings">None</div>
-<h2>Network activity</h2><table><thead><tr><th>Kind</th><th>Direction</th><th>Process</th><th>Protocol</th><th>Local</th><th>Remote</th><th title="Continuous time Tattler has observed this live endpoint">Observed for ↓</th><th>State</th></tr></thead><tbody id="connections"></tbody></table>
+<h2>Network activity</h2><table><thead><tr><th>Kind</th><th>Direction</th><th>Process</th><th>Transport</th><th>Protocol evidence</th><th>Local</th><th>Remote</th><th title="Continuous time Tattler has observed this live endpoint">Observed for ↓</th><th>State</th></tr></thead><tbody id="connections"></tbody></table>
+<h2>Semantic activity</h2><table><thead><tr><th>Observed</th><th>Kind</th><th>Protocol</th><th>Direction</th><th>Reporter</th><th>Peer</th><th>Route</th><th>Status</th><th>Duration</th><th>Detail</th></tr></thead><tbody id="semantic"></tbody></table>
 <script>
 function pct(n){return Number(n||0).toFixed(1)+'%'}
 function unavailable(s,n){return Array.isArray(s.unavailable_metrics)&&s.unavailable_metrics.includes(n)}
@@ -210,6 +347,7 @@ async function tick(){
  const st=await fetch('/api/v1/status').then(r=>r.json());
  const cs=await fetch('/api/v1/current').then(r=>r.json());
  const fs=await fetch('/api/v1/findings').then(r=>r.json());
+ const sem=await fetch('/api/v1/semantic-events?limit=200').then(r=>r.json());
  const s=st.latest_system||{};
  document.getElementById('meta').textContent=(s.platform?s.platform+' | ':'')+st.collector+' | '+(st.current_observations??st.current_connections)+' observations | '+st.recent_events+' observation events';
  document.getElementById('cpu').textContent=pct(s.cpu_percent);
@@ -218,7 +356,8 @@ async function tick(){
  document.getElementById('mem').textContent=s.mem_total_kb?((s.mem_available_kb/s.mem_total_kb)*100).toFixed(1)+'%':'-';
  document.getElementById('findings').innerHTML=fs.length?fs.map(f=>'<div class="finding"><b>'+esc(f.severity).toUpperCase()+': '+esc(f.summary)+'</b><br>'+esc(f.evidence)+'</div>').join(''):'None';
  const live=[...cs].sort((a,b)=>Number(b.age_seconds||0)-Number(a.age_seconds||0)||String(a.local||'').localeCompare(String(b.local||''))||String(a.remote||'').localeCompare(String(b.remote||''))||String((a.process||{}).pid||'').localeCompare(String((b.process||{}).pid||'')));
- document.getElementById('connections').innerHTML=live.map(c=>'<tr><td>'+esc(c.kind||'unknown')+'</td><td class="'+esc(c.direction)+'">'+esc(c.direction||'-')+'</td><td>'+esc((c.process&&c.process.name)||c.owner||'?')+((c.process&&c.process.pid)?' ('+esc(c.process.pid)+')':'')+'</td><td>'+esc(c.protocol)+'</td><td><code>'+esc(c.local)+'</code></td><td><code>'+esc((c.remote&&c.remote!=='invalid AddrPort'&&c.remote!=='0.0.0.0:0'&&c.remote!=='[::]:0')?c.remote:'-')+'</code></td><td>'+esc(ageLabel(c.age_seconds))+'</td><td>'+esc(c.state||'-')+'</td></tr>').join('');
+ document.getElementById('connections').innerHTML=live.map(c=>'<tr><td>'+esc(c.kind||'unknown')+'</td><td class="'+esc(c.direction)+'">'+esc(c.direction||'-')+'</td><td>'+esc((c.process&&c.process.name)||c.owner||'?')+((c.process&&c.process.pid)?' ('+esc(c.process.pid)+')':'')+'</td><td>'+esc(c.protocol)+'</td><td>'+esc(protocolEvidence(c))+'</td><td><code>'+esc(c.local)+'</code></td><td><code>'+esc((c.remote&&c.remote!=='invalid AddrPort'&&c.remote!=='0.0.0.0:0'&&c.remote!=='[::]:0')?c.remote:'-')+'</code></td><td>'+esc(ageLabel(c.age_seconds))+'</td><td>'+esc(c.state||'-')+'</td></tr>').join('');
+ document.getElementById('semantic').innerHTML=sem.slice().reverse().map(e=>'<tr><td>'+esc(e.observed_at||'')+'</td><td>'+esc(e.kind||'')+'</td><td>'+esc(e.protocol||'')+'</td><td>'+esc(e.direction||'-')+'</td><td>'+esc(e.reporter||'-')+'</td><td>'+esc(e.peer||'-')+'</td><td><code>'+esc(e.route||'-')+'</code></td><td>'+esc(e.status||'-')+'</td><td>'+esc(e.duration_ms?e.duration_ms+' ms':'-')+'</td><td>'+esc(semanticDetail(e))+'</td></tr>').join('');
 }
 tick();setInterval(tick,2000)
 </script></body></html>`)

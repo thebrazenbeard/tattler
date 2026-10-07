@@ -27,11 +27,11 @@ tcp,tcp6,udp,udp6              TCP/UDP OWNER_PID tables
         |                                |
         +---------------+----------------+
                         v
-              typed endpoint snapshot
+              typed transport snapshot
         tcp_session / tcp_listener /
-                   udp_endpoint
+          udp_endpoint / udp_flow
                         |
-             ownership enrichment
+       ownership + protocol evidence
                         |
                 snapshot differ
                         |
@@ -48,23 +48,34 @@ tcp,tcp6,udp,udp6              TCP/UDP OWNER_PID tables
              |                         |
        browser dashboard        Windows desktop
                                Wails companion
+
+Local apps / proxies / webhook workers
+                 |
+      loopback JSON semantic reports
+                 |
+        bounded semantic memory
+                 |
+                 +-----> loopback HTTP/API/UI
 ```
 
 Network sampling defaults to one second. The more expensive Linux whole-host/process sampler defaults to five seconds so the agent remains small on DS216-class hardware.
 
 ## Typed network observations
 
-The public model uses three kinds:
+The public transport model uses four kinds:
 
 - `tcp_session`: a sampled non-listening TCP endpoint pair and state;
 - `tcp_listener`: a sampled local TCP listener;
-- `udp_endpoint`: a sampled bound UDP endpoint.
+- `udp_endpoint`: a sampled bound UDP endpoint without a proven remote peer;
+- `udp_flow`: a Linux connected-UDP row whose sampled kernel table exposes a nonzero remote endpoint.
 
-Linux reads `/proc/net/{tcp,tcp6,udp,udp6}`. Windows uses `GetExtendedTcpTable` and `GetExtendedUdpTable` OWNER_PID tables.
+Linux reads `/proc/net/{tcp,tcp6,udp,udp6}`. Windows uses `GetExtendedTcpTable` and `GetExtendedUdpTable` OWNER_PID tables. Windows IP Helper UDP tables do not expose remote peers, so Windows UDP remains `udp_endpoint` evidence in V1.
 
-A UDP endpoint has no inferred remote peer or direction. Its presence does not prove a datagram was sent or received. Likewise, a `tcp_session` is a sampled table row, not proof that Tattler observed the handshake.
+An `udp_endpoint` does not prove a datagram was sent or received. A Linux `udp_flow` proves only that the kernel table exposed the tuple at sample time, not that Tattler observed datagram traffic or a handshake. Likewise, a `tcp_session` is a sampled table row, not proof that Tattler observed the handshake.
 
-TCP direction is derived from local-address membership plus contemporaneous listener evidence where the platform supplies enough information. Listener direction is `listen`. UDP direction remains unset.
+TCP direction is derived from local-address membership plus contemporaneous listener evidence where the platform supplies enough information. Listener direction is `listen`. UDP direction remains unset unless a future stronger collector proves it.
+
+Each connection can also carry `protocol_evidence`. V1 port-derived entries use `confidence=heuristic` and `source=well_known_port`. Transport remains unchanged: TCP/443 is still transport `tcp` even when Tattler adds `tls ?` and `https ?`; UDP/443 is still `udp`/`udp_flow` even when Tattler adds `quic ?`. V1 never promotes UDP/443 into an HTTP/3 claim because it does not parse QUIC ALPN.
 
 ## Observation event contract
 
@@ -73,6 +84,23 @@ Each event has `schema_version`, `event_id`, `observed_at`, `host`, `kind`, `con
 Journal event names `open` and `close` mean appearance and disappearance between samples. They do not claim kernel socket lifecycle, TCP SYN/FIN, or UDP datagram events.
 
 `event_id` is deterministic over the V1 occurrence fields. Collector `source` identifies how the evidence was sampled; it is provenance, not a fidelity upgrade.
+
+## Reported semantic evidence
+
+The loopback API exposes `/api/v1/semantic-events` as a separate application-semantic evidence path.
+
+Local applications, reverse proxies, webhook handlers, or adapters can report:
+
+- `http_transaction`;
+- `webhook_delivery`;
+- `websocket_session`;
+- `grpc_rpc`.
+
+These reports use `confidence=reported` and `source=reported`. That is provenance: Tattler records what the local reporter asserted but does not independently decrypt or reconstruct the transaction.
+
+The POST schema is deliberately metadata-only. It does not accept raw request/response bodies, arbitrary headers, cookies, authorization values, raw URLs, query strings, fragments, or arbitrary error text. `route` is constrained to a low-cardinality path/template and `error_type` to a bounded token.
+
+Semantic reports are memory-bounded and session-scoped in V1. They are not written into the durable connection-event JSONL journal because that journal has a different schema and recovery contract.
 
 ## System telemetry
 
@@ -94,14 +122,18 @@ The companion does not open a public listener, collect network telemetry indepen
 
 ## Safety boundary
 
-Tattler does not modify firewall/routing state, open raw packet sockets, capture payloads, alter DNS, create public listeners, or transmit telemetry off-host. The DSM package runs as the package account rather than root.
+Tattler does not modify firewall/routing state, open raw packet sockets, capture payloads, decrypt TLS/QUIC, alter DNS, create public listeners, or transmit telemetry off-host. The DSM package runs as the package account rather than root.
 
-The HTTP UI/API is hard-bound to loopback. Persistent event state is created inside the configured state directory. System-sample history is memory-bounded to avoid making Tattler itself a source of disk pressure.
+The HTTP UI/API is hard-bound to loopback. Semantic POSTs require `application/json`, and the schema excludes payload/credential-bearing fields. Persistent connection-event state is created inside the configured state directory. System-sample and semantic-event histories are memory-bounded to avoid making Tattler itself a source of disk pressure.
 
 ## Known limitations
 
 - Sampling can miss short TCP sessions, endpoint churn, and short resource spikes between samples.
 - UDP endpoint presence is not datagram or remote-peer evidence.
+- Linux `udp_flow` presence is sampled socket-tuple evidence, not datagram/handshake evidence.
+- Port-derived protocol names are heuristics and can be wrong when applications use nonstandard or repurposed ports.
+- Windows IP Helper does not expose remote UDP peers, so outbound Windows QUIC cannot be honestly reconstructed from this collector alone.
+- Reported semantic events are assertions from local reporters and are not independently verified by Tattler.
 - PID/process attribution can fail because a process exited or OS permissions deny enrichment.
 - Linux network namespaces can hide sockets/processes from the host namespace view.
 - NAT can make observed endpoints differ from application/external endpoints.

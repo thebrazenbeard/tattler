@@ -37,6 +37,7 @@ type DesktopSnapshot struct {
 	Current  []map[string]any `json:"current"`
 	Findings []map[string]any `json:"findings"`
 	Events   []map[string]any `json:"events"`
+	Semantic []map[string]any `json:"semantic"`
 }
 
 type launcher func(string, ...string) (managedProcess, error)
@@ -155,6 +156,7 @@ func (a *App) Snapshot() (DesktopSnapshot, error) {
 	if err := a.getJSON("/api/v1/current", &out.Current); err != nil { return out, err }
 	if err := a.getJSON("/api/v1/findings", &out.Findings); err != nil { return out, err }
 	if err := a.getJSON("/api/v1/events?limit=200", &out.Events); err != nil { return out, err }
+	if err := a.getJSONOptional("/api/v1/semantic-events?limit=200", &out.Semantic); err != nil { return out, err }
 	return out, nil
 }
 
@@ -173,6 +175,17 @@ func (a *App) getJSON(path string, target any) error {
 	resp, err := a.client.Do(req)
 	if err != nil { return err }
 	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK { return errors.New(resp.Status) }
+	return json.NewDecoder(resp.Body).Decode(target)
+}
+
+func (a *App) getJSONOptional(path string, target any) error {
+	req, err := http.NewRequest(http.MethodGet, a.baseURL+path, nil)
+	if err != nil { return err }
+	resp, err := a.client.Do(req)
+	if err != nil { return err }
+	defer resp.Body.Close()
+	if resp.StatusCode == http.StatusNotFound { return nil }
 	if resp.StatusCode != http.StatusOK { return errors.New(resp.Status) }
 	return json.NewDecoder(resp.Body).Decode(target)
 }
