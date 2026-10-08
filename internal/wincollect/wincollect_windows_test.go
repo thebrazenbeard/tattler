@@ -197,3 +197,12 @@ func TestConnectionsIncludesOwnedUDP6EndpointWhenAvailable(t *testing.T) {
 	}
 	t.Fatalf("UDP6 endpoint %s not found in Windows UDP table", local)
 }
+
+func TestScopedIPv6EndpointsRemainDistinct(t *testing.T) {
+	raw := [16]byte{0xfe, 0x80, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1}
+	first := ipv6WithScope(raw, 12)
+	second := ipv6WithScope(raw, 13)
+	if first == second || first.Zone() != "12" || second.Zone() != "13" {
+		t.Fatalf("scopes collapsed: %s %s", first, second)
+	}
+}

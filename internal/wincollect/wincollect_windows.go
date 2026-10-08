@@ -9,6 +9,7 @@ import (
 	"path/filepath"
 	"runtime"
 	"sort"
+	"strconv"
 	"syscall"
 	"time"
 	"unsafe"
@@ -181,8 +182,8 @@ func tcp6Connections() ([]model.Connection, error) {
 		} else if row.RemotePort == 0 {
 			continue
 		}
-		local := netip.AddrPortFrom(netip.AddrFrom16(row.LocalAddr), networkPort(row.LocalPort))
-		remote := netip.AddrPortFrom(netip.AddrFrom16(row.RemoteAddr), networkPort(row.RemotePort))
+		local := netip.AddrPortFrom(ipv6WithScope(row.LocalAddr, row.LocalScopeID), networkPort(row.LocalPort))
+		remote := netip.AddrPortFrom(ipv6WithScope(row.RemoteAddr, row.RemoteScopeID), networkPort(row.RemotePort))
 		out = append(out, connection(kind, "tcp6", local, remote, row.State, row.OwningPID, direction))
 	}
 	return out, nil
@@ -217,7 +218,7 @@ func udp6Endpoints() ([]model.Connection, error) {
 	out := make([]model.Connection, 0, count)
 	for i := uint32(0); i < count; i++ {
 		row := *(*udp6Row)(unsafe.Pointer(uintptr(unsafe.Pointer(&buf[0])) + offset + uintptr(i)*rowSize))
-		local := netip.AddrPortFrom(netip.AddrFrom16(row.LocalAddr), networkPort(row.LocalPort))
+		local := netip.AddrPortFrom(ipv6WithScope(row.LocalAddr, row.LocalScopeID), networkPort(row.LocalPort))
 		remote := netip.AddrPortFrom(netip.IPv6Unspecified(), 0)
 		out = append(out, connection(model.ObservationUDPEndpoint, "udp6", local, remote, 0, row.OwningPID, ""))
 	}
@@ -265,6 +266,17 @@ func extendedTCPTable(af uintptr) ([]byte, error) {
 	}
 	return buf, nil
 }
+
+// Keep IPv6 zone/scope IDs from the Windows native table. Omitting them
+// merges endpoints on separate scoped interfaces into one tracking identity.
+func ipv6WithScope(raw [16]byte, scope uint32) netip.Addr {
+	addr := netip.AddrFrom16(raw)
+	if scope != 0 {
+		addr = addr.WithZone(strconv.FormatUint(uint64(scope), 10))
+	}
+	return addr
+}
+
 func connection(kind, proto string, local, remote netip.AddrPort, state, pid uint32, direction string) model.Connection {
 	p := processInfo(pid)
 	out := model.Connection{
