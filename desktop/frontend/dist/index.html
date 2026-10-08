@@ -1,89 +1,326 @@
 <!doctype html>
-<html>
+<html lang="en">
 <head>
 <meta charset="utf-8">
-<meta name="viewport" content="width=device-width,initial-scale=1">
-<title>Tattler</title>
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Tattler · Local diagnostics</title>
 <link rel="icon" href="tattler-icon.png">
 <style>
-:root{font-family:Segoe UI,system-ui,sans-serif;color:#e8edf2;background:#0f1318}
+:root{font-family:Segoe UI,system-ui,sans-serif;background:#0f1318;color:#e8edf2;color-scheme:dark}
 *{box-sizing:border-box}body{margin:0;padding:24px;background:linear-gradient(145deg,#0f1318,#151c24);min-height:100vh}
-header{display:flex;align-items:center;justify-content:space-between;gap:16px;margin-bottom:22px}
-.brand{display:flex;align-items:center;gap:13px}.brand img{width:48px;height:48px;border-radius:11px}.brand h1{margin:0;font-size:25px}
-.sub{color:#8fa2b5;font-size:13px}.state{padding:7px 11px;border-radius:999px;background:#202a35;color:#b8c7d6}
-.state.ok{background:#173524;color:#96e7b2}.state.bad{background:#3a2024;color:#ffadb5}
-button{background:#2a70d6;color:white;border:0;border-radius:8px;padding:9px 13px;font-weight:600;cursor:pointer}
-button:hover{filter:brightness(1.08)}.grid{display:grid;grid-template-columns:repeat(4,minmax(130px,1fr));gap:12px}
-.card{background:#171e26;border:1px solid #283440;border-radius:10px;padding:14px}.label{color:#8fa2b5;font-size:12px}.value{font-size:22px;font-weight:700;margin-top:4px}
-section{margin-top:22px}h2{font-size:16px;margin:0 0 10px}table{width:100%;border-collapse:collapse;background:#151b22;border:1px solid #283440;border-radius:10px;overflow:hidden}
-th,td{text-align:left;padding:8px 10px;border-bottom:1px solid #27313b;font-size:12px}th{color:#8fa2b5;background:#1a222b}code{color:#9bdcff}
-.finding{background:#241f16;border:1px solid #40331e;border-radius:8px;padding:10px;margin:7px 0}.muted{color:#8fa2b5}.error{color:#ffadb5}
-@media(max-width:850px){.grid{grid-template-columns:repeat(2,1fr)}body{padding:14px}.scroll{overflow:auto}}
+header{display:flex;justify-content:space-between;gap:16px;align-items:center;margin-bottom:16px}
+.brand{display:flex;align-items:center;gap:12px}.brand img{width:48px;height:48px;border-radius:11px}.brand h1{margin:0;font-size:25px}
+.sub,.muted{color:#a6b8ca;font-size:13px}.state{padding:8px 12px;border-radius:20px;background:#26313d}
+.state.ok{background:#173524;color:#96e7b2}.state.bad{background:#422629;color:#ffc1c6}
+button,select,input{font:inherit;color:inherit;border:1px solid #455467;background:#202b38;border-radius:7px;padding:8px}
+button{cursor:pointer}button:hover,summary:hover{background:#293746}button:focus-visible,summary:focus-visible,select:focus-visible,input:focus-visible{outline:3px solid #68bafa;outline-offset:2px}
+button[disabled]{opacity:.6}.primary{background:#266ac1}.error{color:#ffc1c6}
+.metrics{display:grid;grid-template-columns:repeat(4,minmax(125px,1fr));gap:12px}.metric{padding:14px;background:#171e26;border:1px solid #2b3846;border-radius:10px}
+.metric .value{font-size:23px;font-weight:700}.metric .label{font-size:12px;color:#a6b8ca}
+#freshness{font-size:13px;padding:10px 2px;color:#b9c9d9;min-height:40px}
+.panel{border:1px solid #324355;border-radius:10px;background:#151d26;margin:14px 0;overflow:hidden}
+.panel>summary{list-style:none;cursor:pointer;padding:16px;display:flex;align-items:center;gap:12px;font-size:16px;font-weight:650}
+.panel>summary::-webkit-details-marker{display:none}.panel>summary:before{content:"▸";color:#91abc8;transition:transform .15s}.panel[open]>summary:before{transform:rotate(90deg)}
+.count{font-weight:450;font-size:13px;color:#c2d3e4}.panel-body{padding:0 14px 14px}
+.filters{display:flex;flex-wrap:wrap;gap:10px;align-items:center;margin:0 0 12px}.filters label{display:flex;gap:6px;align-items:center;font-size:12px;color:#bbcbdc}
+.filters input{min-width:170px}.chips{display:flex;gap:6px;flex-wrap:wrap;margin-bottom:10px}.chips button{font-size:12px;padding:4px 9px}
+.scroll{overflow:auto;max-height:62vh}.scroll table{width:100%;border-collapse:collapse;text-align:left;min-width:800px}
+th,td{padding:9px 10px;border-bottom:1px solid #2c3948;font-size:12px;vertical-align:top}th{position:sticky;top:0;background:#202a36;color:#bdcde0;z-index:1}
+tr:hover{background:#1c2835}code{color:#9bdcff;overflow-wrap:anywhere}.detail td{background:#101a25}.detail pre{white-space:pre-wrap;overflow-wrap:anywhere;color:#b5d1e6;font-size:11px;max-height:230px;overflow:auto}
+.row-expander{padding:2px 7px;min-width:26px}.hint{color:#a6b8ca;font-size:12px;margin:6px 0 10px}
+.pill{font-size:11px;padding:3px 6px;border:1px solid #556c85;border-radius:6px}.warning{color:#ffc77b}.critical{color:#ff9e9e}
+.empty{color:#afc1d3;padding:16px}.offline{opacity:.75}
+@media(max-width:860px){body{padding:12px}.metrics{grid-template-columns:repeat(2,minmax(120px,1fr))}header{flex-wrap:wrap}.filters label{width:100%}.filters select,.filters input{flex:1}}
 </style>
 </head>
 <body>
-<header><div class="brand"><img src="tattler-icon.png" alt=""><div><h1>Tattler</h1><div class="sub">Local host diagnostics and network activity</div></div></div><div><span id="state" class="state">Checking…</span> <button id="start">Start agent</button></div></header>
-<div id="startError" class="error" style="display:none;margin:-10px 0 12px"></div>
-<div class="grid">
-<div class="card"><div class="label">CPU</div><div class="value" id="cpu">—</div></div>
-<div class="card"><div class="label">Memory available</div><div class="value" id="mem">—</div></div>
-<div class="card"><div class="label">Observations</div><div class="value" id="obs">—</div></div>
-<div class="card"><div class="label">Collector</div><div class="value" id="collector" style="font-size:15px">—</div></div>
+<header>
+ <div class="brand"><img src="tattler-icon.png" alt=""><div><h1>Tattler</h1><div class="sub">Local host diagnostics · sampled evidence, not packet capture</div></div></div>
+ <div><span id="state" class="state">Checking…</span> <button class="primary" id="start">Start agent</button></div>
+</header>
+<div id="startError" class="error" role="alert" hidden></div>
+<div class="metrics">
+ <div class="metric"><div class="label">CPU</div><div id="cpu" class="value">—</div></div>
+ <div class="metric"><div class="label">Memory available</div><div id="mem" class="value">—</div></div>
+ <div class="metric"><div class="label">Sampled rows</div><div id="obs" class="value">—</div></div>
+ <div class="metric"><div class="label">Collector</div><div id="collector" class="value" style="font-size:15px">—</div></div>
 </div>
-<section><h2>Findings</h2><div id="findings" class="muted">None</div></section>
-<section><h2>Network activity</h2><div class="scroll"><table><thead><tr><th>Kind</th><th>Direction</th><th>Process</th><th>Transport</th><th>Protocol evidence</th><th>Local</th><th>Remote</th><th title="Continuous time Tattler has observed this live endpoint">Observed for ↓</th><th>State</th></tr></thead><tbody id="current"></tbody></table></div></section>
-<section><h2>Semantic activity</h2><div class="scroll"><table><thead><tr><th>Observed</th><th>Kind</th><th>Protocol</th><th>Direction</th><th>Reporter</th><th>Peer</th><th>Route</th><th>Status</th><th>Duration</th><th>Detail</th></tr></thead><tbody id="semantic"></tbody></table></div></section>
-<section><h2>Recent observation events</h2><div class="scroll"><table><thead><tr><th>Observed</th><th>Event</th><th>Kind</th><th>Endpoint</th><th>Process</th></tr></thead><tbody id="events"></tbody></table></div></section>
+<div id="freshness" aria-live="polite">Awaiting collector status.</div>
+<details id="findings-panel" class="panel"><summary>Findings <span class="count" id="findings-count">· —</span></summary>
+ <div class="panel-body"><div class="scroll"><table><thead><tr><th>Severity</th><th>Finding</th><th>Measured evidence</th><th>Observed</th></tr></thead><tbody id="findings"></tbody></table></div></div>
+</details>
+<details id="network-panel" class="panel" open><summary>Network activity <span class="count" id="network-count">· —</span></summary>
+ <div class="panel-body">
+  <div class="filters">
+   <label>View <select id="view-filter"></select></label>
+   <label>Process <select id="process-filter"><option value="">All processes</option></select></label>
+   <label>Sort <select id="sort-filter"><option value="longest">Observed longest</option><option value="newest">Newest</option><option value="process">Process</option><option value="local">Local endpoint</option><option value="remote">Remote endpoint</option></select></label>
+   <label>Search <input id="search-filter" type="search" placeholder="Process, PID, protocol, IP, port" aria-label="Search sampled network evidence"></label>
+   <button id="group-mode" type="button">Grouped view</button>
+  </div>
+  <div class="chips" id="filter-chips"></div>
+  <div class="hint" id="network-hint">Group counts represent sampled rows, not proven distinct sockets.</div>
+  <div class="scroll"><table><thead><tr><th>Evidence</th><th>Process</th><th>Kind / direction</th><th>Endpoint or peer</th><th>Protocol evidence</th><th title="Elapsed since first sampled observation">Observed for ↓</th><th>State</th><th>Rows / keys</th></tr></thead><tbody id="current"></tbody></table></div>
+ </div>
+</details>
+<details id="semantic-panel" class="panel"><summary>Semantic activity <span class="count" id="semantic-count">· —</span></summary>
+ <div class="panel-body"><p class="hint">Application-reported transactions. A missing report is not proof of no traffic.</p><div class="scroll"><table><thead><tr><th>Observed</th><th>Kind</th><th>Protocol</th><th>Direction</th><th>Reporter</th><th>Peer</th><th>Route</th><th>Status</th><th>Duration</th><th>Detail</th></tr></thead><tbody id="semantic"></tbody></table></div></div>
+</details>
+<details id="events-panel" class="panel"><summary>Recent observation events <span class="count" id="events-count">· —</span></summary>
+ <div class="panel-body"><p class="hint">Most recent 200 sampled appearance/disappearance events; not confirmed kernel socket lifecycle. Older journal history is separate.</p><div class="scroll"><table><thead><tr><th>Observed</th><th>Change</th><th>Kind</th><th>Process</th><th>Local</th><th>Remote</th><th>Collector source</th></tr></thead><tbody id="events"></tbody></table></div></div>
+</details>
 <script>
 const $=id=>document.getElementById(id);
 const esc=v=>String(v??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
-const endpoint=v=>(!v||v==='0.0.0.0:0'||v==='[::]:0'||v==='invalid AddrPort')?'-':v;
-const proc=c=>((c.process&&c.process.name)||c.owner||'?')+((c.process&&c.process.pid)?' ('+c.process.pid+')':'');
-const protocolEvidence=c=>(c.protocol_evidence||[]).map(e=>e.name+(e.confidence==='heuristic'?' ?':'')).join(', ')||'-';
-const semanticDetail=e=>[e.provider,e.event_type,e.delivery_id,e.retry?'retry '+e.retry:'',e.error_type?'error='+e.error_type:''].filter(Boolean).join(' • ')||'-';
-const ageLabel=seconds=>{const n=Math.max(0,Number(seconds||0));if(n<60)return Math.floor(n)+'s';if(n<3600)return Math.floor(n/60)+'m '+Math.floor(n%60)+'s';if(n<86400)return Math.floor(n/3600)+'h '+Math.floor((n%3600)/60)+'m';return Math.floor(n/86400)+'d '+Math.floor((n%86400)/3600)+'h'};
-function render(s){
- const a=s.agent||{}; $('state').textContent=a.running?(a.managed?'Agent running • managed':'Agent running • attached'):(a.error||'Agent offline'); $('state').className='state '+(a.running?'ok':'bad');
- const st=s.status||{}, sys=st.latest_system||{}; $('cpu').textContent=Number(sys.cpu_percent||0).toFixed(1)+'%';
+const cache={status:{},current:[],findings:[],semantic:[],events:[],agent:{running:false}};
+const versions={network:'',findings:'',semantic:'',events:''};
+const dirty={network:true,findings:true,semantic:true,events:true};
+const inFlight={}; const expanded=new Set();
+const sectionErrors={findings:false,semantic:false,events:false};
+let grouped=true, sectionPrefs={}, lastFast=0, startError='';
+const neutralEndpoint=v=>(!v||v==='invalid AddrPort'||v==='0.0.0.0:0'||v==='[::]:0')?'-':v;
+const proc=c=>((c.process&&c.process.name)||c.owner||'Unknown owner')+((c.process&&c.process.pid)?' ('+c.process.pid+')':'');
+const nameOf=c=>(c.process&&c.process.name)||c.owner||'Unknown owner';
+const ageLabel=seconds=>{const n=Math.max(0,Number(seconds||0));if(n<60)return Math.floor(n)+'s';if(n<3600)return Math.floor(n/60)+'m '+Math.floor(n%60)+'s';if(n<86400)return Math.floor(n/3600)+'h '+Math.floor((n%86400)/60)+'m';return Math.floor(n/86400)+'d '+Math.floor((n%86400)/3600)+'h'};
+const displayAge=c=>c.first_seen?ageLabel((Date.now()-Date.parse(c.first_seen))/1000):ageLabel(c.age_seconds);
+const formatDate=v=>{if(!v)return '—';const d=new Date(v);return isNaN(d.getTime())?'—':d.toLocaleString()};
+const evidence=c=>(c.protocol_evidence||[]).map(e=>e.name+(e.confidence==='heuristic'?' ?':'')).join(', ')||'—';
+const semanticDetail=e=>[e.provider,e.event_type,e.delivery_id,e.retry?'retry '+e.retry:'',e.error_type?'error='+e.error_type:''].filter(Boolean).join(' · ')||'—';
+function safeGet(k){try{return localStorage.getItem(k)}catch(_){return null}}
+function safeSet(k,v){try{localStorage.setItem(k,v)}catch(_){}}
+function setupPanels(){
+ for(const [name,defaultOpen] of [['findings',false],['network',true],['semantic',false],['events',false]]){
+  const el=$(name+'-panel'),saved=safeGet('tattler.panel.'+name);
+  sectionPrefs[name]=saved!==null;
+  el.open=saved===null?defaultOpen:saved==='1';
+  el.addEventListener('toggle',()=>{sectionPrefs[name]=true;safeSet('tattler.panel.'+name,el.open?'1':'0');if(el.open)renderSection(name)});
+ }
+}
+function updateAges(){
+ document.querySelectorAll('[data-firstseen]').forEach(el=>{
+  const at=Date.parse(el.dataset.firstseen);
+  if(!isNaN(at))el.textContent=ageLabel((Date.now()-at)/1000);
+ });
+ const st=cache.status||{},scan=st.network_scan||{};
+ if(scan.last_complete_at){const d=Date.parse(scan.last_complete_at);
+  if(!isNaN(d))$('last-complete-age')?.replaceChildren(document.createTextNode(ageLabel((Date.now()-d)/1000)));
+ }
+}
+function networkFingerprint(rows){return JSON.stringify((rows||[]).map(c=>{const x={...c};delete x.age_seconds;return JSON.stringify(x)}).sort())}
+function setData(name,data){
+ const value=Array.isArray(data)?data:[];
+ const fingerprint=JSON.stringify(value);
+ if(versions[name]!==fingerprint){cache[name]=value;versions[name]=fingerprint;dirty[name]=true}
+ updateCounts();
+ renderSection(name);
+}
+function updateCounts(){
+ $('findings-count').textContent='· '+cache.findings.length+(sectionErrors.findings?' · cached / refresh failed':'');
+ $('network-count').textContent='· '+cache.current.length+' sampled rows';
+ $('semantic-count').textContent='· '+cache.semantic.length+' reports'+(sectionErrors.semantic?' · cached / refresh failed':'');
+ $('events-count').textContent='· '+cache.events.length+' recent'+(sectionErrors.events?' · cached / refresh failed':'');
+}
+function renderSection(name){
+ if(!$(name+'-panel').open)return;
+ if(name==='network')renderNetwork();
+ else if(name==='findings')renderFindings();
+ else if(name==='semantic')renderSemantic();
+ else if(name==='events')renderEvents();
+}
+function renderFindings(){
+ if(!dirty.findings)return;
+ dirty.findings=false;
+ const fs=[...cache.findings].sort((a,b)=>{
+  const score=x=>({critical:0,warning:1,info:2})[x.severity]??3;
+  return score(a)-score(b)||(Date.parse(b.observed_at)||0)-(Date.parse(a.observed_at)||0);
+ });
+ $('findings').innerHTML=fs.length?fs.map(f=>'<tr><td class="'+esc(f.severity)+'">'+esc((f.severity||'info').toUpperCase())+'</td><td>'+esc(f.summary||f.code||'—')+'</td><td>'+esc(f.evidence||'No measurements supplied')+'</td><td>'+esc(formatDate(f.observed_at))+'</td></tr>').join(''):'<tr><td colspan="4" class="empty">No active findings reported</td></tr>';
+}
+function renderSemantic(){
+ if(!dirty.semantic)return;
+ dirty.semantic=false;
+ $('semantic').innerHTML=cache.semantic.length?[...cache.semantic].reverse().map(e=>
+  '<tr><td>'+esc(formatDate(e.observed_at))+'</td><td>'+esc(e.kind||'—')+'</td><td>'+esc(e.protocol||'—')+'</td><td>'+esc(e.direction||'—')+'</td><td>'+esc(e.reporter||'—')+' <span class="pill">reported</span></td><td>'+esc(e.peer||'—')+'</td><td><code>'+esc(e.route||'—')+'</code></td><td>'+esc(e.status||'—')+'</td><td>'+esc(e.duration_ms===undefined?'—':e.duration_ms+' ms')+'</td><td>'+esc(semanticDetail(e))+'</td></tr>').join(''):
+  '<tr><td colspan="10" class="empty">No application reports received in this session</td></tr>';
+}
+function renderEvents(){
+ if(!dirty.events)return;
+ dirty.events=false;
+ $('events').innerHTML=cache.events.length?[...cache.events].reverse().map(e=>{
+  const c=e.connection||{},verb=e.kind==='open'?'Appeared':e.kind==='close'?'Disappeared':e.kind||'—';
+  return '<tr><td>'+esc(formatDate(e.observed_at))+'</td><td><details><summary>'+esc(verb)+'</summary><code>'+esc(e.event_id||'No event ID')+'</code></details></td><td>'+esc(c.kind||'—')+'</td><td>'+esc(proc(c))+'</td><td><code>'+esc(c.local||'—')+'</code></td><td><code>'+esc(neutralEndpoint(c.remote))+'</code></td><td>'+esc(e.source||'—')+'</td></tr>';
+ }).join(''):'<tr><td colspan="7" class="empty">No recent observation changes</td></tr>';
+}
+function hostOf(endpoint){
+ const s=String(endpoint||'');if(!s||s==='invalid AddrPort')return '';
+ if(s[0]==='[')return s.slice(1,s.indexOf(']'));
+ const pos=s.lastIndexOf(':');return pos<0?'':s.slice(0,pos);
+}
+function loopback(endpoint){const h=hostOf(endpoint).toLowerCase();return h==='::1'||h.startsWith('127.')||h==='::ffff:127.0.0.1'}
+function hasRemote(c){return ['tcp_session','udp_flow'].includes(c.kind)&&neutralEndpoint(c.remote)!=='-'}
+function remoteNonLoopback(c){return hasRemote(c)&&!loopback(c.remote)}
+function unknownOwner(c){return !((c.process||{}).pid||c.owner)}
+const viewDefs=[
+ ['all','All observations',()=>true],
+ ['established','Established TCP',c=>c.kind==='tcp_session'&&c.state==='ESTABLISHED'],
+ ['other-tcp','Other TCP states',c=>c.kind==='tcp_session'&&c.state!=='ESTABLISHED'],
+ ['listeners','Listening services',c=>c.kind==='tcp_listener'],
+ ['nonloopback-listeners','Non-loopback listeners',c=>c.kind==='tcp_listener'&&!loopback(c.local)],
+ ['udp','UDP endpoints',c=>c.kind==='udp_endpoint'],
+ ['udp-flows','UDP flows',c=>c.kind==='udp_flow'],
+ ['remote','Remote peers (non-loopback)',remoteNonLoopback],
+ ['loopback','Loopback-bound',c=>loopback(c.local)],
+ ['unknown','Unknown owner',unknownOwner]
+];
+function chooseProcess(c){const p=c.process||{};return JSON.stringify([p.pid||0,p.name||'',c.owner||''])}
+function populateChoices(){
+ const currentView=$('view-filter').value||'all';
+ $('view-filter').innerHTML=viewDefs.map(([id,label,pred])=>'<option value="'+id+'">'+esc(label)+' · '+cache.current.filter(pred).length+'</option>').join('');
+ $('view-filter').value=currentView;
+ const selected=$('process-filter').value;
+ const processes=new Map();
+ for(const c of cache.current){
+  const key=chooseProcess(c),existing=processes.get(key)||{label:proc(c),count:0};
+  existing.count++;processes.set(key,existing);
+ }
+ $('process-filter').innerHTML='<option value="">All processes</option>'+[...processes].sort((a,b)=>a[1].label.localeCompare(b[1].label)).map(([key,v])=>'<option value="'+esc(key)+'">'+esc(v.label)+' · '+v.count+'</option>').join('');
+ if(processes.has(selected))$('process-filter').value=selected;
+ else if(selected){$('process-filter').insertAdjacentHTML('beforeend','<option value="'+esc(selected)+'">Previous process (not currently sampled)</option>');$('process-filter').value=selected}
+}
+function filteredRows(){
+ const vf=$('view-filter').value||'all',found=viewDefs.find(x=>x[0]===vf),pred=found?found[2]:()=>true;
+ const pf=$('process-filter').value,needle=$('search-filter').value.trim().toLowerCase();
+ return cache.current.filter(c=>{
+  if(!pred(c)||pf&&chooseProcess(c)!==pf)return false;
+  if(!needle)return true;
+  const p=c.process||{};
+  return [p.name,p.exe,p.pid,c.owner,c.protocol,c.kind,c.direction,c.state,c.local,c.remote,evidence(c)].join(' ').toLowerCase().includes(needle);
+ });
+}
+function groupKey(c){
+ const target=(c.kind==='tcp_session'||c.kind==='udp_flow')?neutralEndpoint(c.remote):String(c.local||'');
+ return JSON.stringify([chooseProcess(c),c.kind,c.protocol,c.direction,target,c.state,hostOf(c.local)]);
+}
+function groupRows(rows){
+ if(!grouped)return rows.map((c,i)=>({key:'raw:'+i+':'+(c.tracking_key||''),items:[c]}));
+ const map=new Map();
+ for(const c of rows){const key=groupKey(c);if(!map.has(key))map.set(key,{key,items:[]});map.get(key).items.push(c)}
+ return [...map.values()];
+}
+function oldestSeconds(g){return Math.max(...g.items.map(c=>Number(c.age_seconds||0)))}
+function sortGroups(groups){
+ const mode=$('sort-filter').value;
+ return groups.sort((a,b)=>{
+  const x=a.items[0],y=b.items[0];
+  if(mode==='longest')return oldestSeconds(b)-oldestSeconds(a);
+  if(mode==='newest')return oldestSeconds(a)-oldestSeconds(b);
+  if(mode==='process')return proc(x).localeCompare(proc(y));
+  if(mode==='local')return String(x.local).localeCompare(String(y.local));
+  if(mode==='remote')return String(x.remote).localeCompare(String(y.remote));
+  return 0;
+ });
+}
+function groupKeys(items){
+ if(!items.every(c=>typeof c.tracking_key==='string'&&c.tracking_key))return 'unknown';
+ return new Set(items.map(c=>c.tracking_key)).size;
+}
+function groupEvidence(items){return [...new Set(items.flatMap(c=>(c.protocol_evidence||[]).map(e=>e.name+(e.confidence==='heuristic'?' ?':''))))].join(', ')||'—'}
+function detailText(items){return items.map((c,i)=>'RAW ROW '+(i+1)+' · '+(c.identity_basis||'unqualified identity')+'\n'+JSON.stringify(c,null,2)).join('\n\n')}
+function rowHTML(g){
+ const c=g.items[0],n=g.items.length,key=encodeURIComponent(g.key),open=expanded.has(g.key);
+ const protocol=groupEvidence(g.items),peer=(c.kind==='tcp_session'||c.kind==='udp_flow')?neutralEndpoint(c.remote):c.local||'—';
+ const ageSource=g.items.find(x=>x.age_seconds===oldestSeconds(g))||c;
+ const age=ageSource.first_seen?'<span data-firstseen="'+esc(ageSource.first_seen)+'">'+esc(displayAge(ageSource))+'</span>':esc(displayAge(ageSource));
+ const row='<tr><td><button type="button" class="row-expander" data-key="'+esc(key)+'" aria-expanded="'+open+'" aria-label="Toggle raw evidence">'+(open?'−':'+')+'</button></td><td>'+esc(proc(c))+'</td><td>'+esc(c.kind||'unknown')+'<div class="muted">'+esc(c.direction||'—')+'</div></td><td><code>'+esc(peer)+'</code></td><td>'+esc(protocol)+'</td><td>'+age+'</td><td>'+esc(c.state||'—')+'</td><td>'+n+' / '+esc(groupKeys(g.items))+'</td></tr>';
+ return row+(open?'<tr class="detail"><td colspan="8"><p class="hint">Raw sampled rows; matching tracking keys do not establish distinct socket instances.</p><pre>'+esc(detailText(g.items))+'</pre></td></tr>':'');
+}
+function renderChips(){
+ const chips=[];
+ if($('view-filter').value!=='all')chips.push(['view',$('view-filter').selectedOptions[0]?.textContent||'View']);
+ if($('process-filter').value)chips.push(['process',$('process-filter').selectedOptions[0]?.textContent||'Process']);
+ if($('search-filter').value.trim())chips.push(['search','Search: '+$('search-filter').value.trim()]);
+ $('filter-chips').innerHTML=chips.map(([k,label])=>'<button type="button" data-clear="'+k+'" aria-label="Remove '+esc(label)+' filter">'+esc(label)+' ×</button>').join('');
+}
+function renderNetwork(){
+ if(!$('network-panel').open)return;
+ if(!dirty.network)return;
+ dirty.network=false;
+ populateChoices();
+ const rows=filteredRows(),groups=sortGroups(groupRows(rows));
+ $('network-hint').textContent=rows.length+' of '+cache.current.length+' sampled rows · '+(grouped?groups.length+' groups':'raw rows')+' · Counted rows are not proven distinct sockets.';
+ $('group-mode').textContent=grouped?'Grouped view':'Raw rows';
+ $('current').innerHTML=groups.length?groups.map(rowHTML).join(''):'<tr><td colspan="8" class="empty">No observations match these filters</td></tr>';
+ renderChips();
+}
+function scanHealth(){
+ const st=cache.status||{},scan=st.network_scan;
+ if(!scan){$('freshness').textContent='Collector scan completeness and freshness unavailable from this agent version.';return}
+ const last=scan.last_complete_at;
+ const note=scan.state==='incomplete'?'Incomplete scan — retaining last complete evidence. ':scan.state==='complete'?'Last complete scan: ':'Awaiting first complete scan. ';
+ $('freshness').innerHTML=esc(note)+(last?'<span id="last-complete-age">'+esc(ageLabel((Date.now()-Date.parse(last))/1000))+'</span> ago':'No complete scan recorded')+' · '+esc(scan.incomplete_scans_skipped||0)+' incomplete scans skipped';
+}
+function renderFast(s){
+ cache.agent=s.agent||{running:false};cache.status=s.status||{};
+ const a=cache.agent,sys=cache.status.latest_system||{};
+ $('state').textContent=a.running?(a.managed?'Agent running · managed':'Agent running · attached'):(a.error||'Agent offline');
+ $('state').className='state '+(a.running?'ok':'bad');
+ $('cpu').textContent=Number.isFinite(Number(sys.cpu_percent))&&cache.status.latest_system?Number(sys.cpu_percent).toFixed(1)+'%':'n/a';
  $('mem').textContent=sys.mem_total_kb?((sys.mem_available_kb/sys.mem_total_kb)*100).toFixed(1)+'%':'n/a';
- $('obs').textContent=st.current_observations??st.current_connections??0; $('collector').textContent=st.collector||'—';
- const fs=s.findings||[]; $('findings').innerHTML=fs.length?fs.map(f=>'<div class="finding"><b>'+esc((f.severity||'info').toUpperCase())+': '+esc(f.summary)+'</b><br><span class="muted">'+esc(f.evidence)+'</span></div>').join(''):'<span class="muted">None</span>';
- const current=[...(s.current||[])].sort((a,b)=>Number(b.age_seconds||0)-Number(a.age_seconds||0)||String(a.local||'').localeCompare(String(b.local||''))||String(a.remote||'').localeCompare(String(b.remote||''))||String((a.process||{}).pid||'').localeCompare(String((b.process||{}).pid||'')));
- $('current').innerHTML=current.map(c=>'<tr><td>'+esc(c.kind||'unknown')+'</td><td>'+esc(c.direction||'-')+'</td><td>'+esc(proc(c))+'</td><td>'+esc(c.protocol)+'</td><td>'+esc(protocolEvidence(c))+'</td><td><code>'+esc(c.local)+'</code></td><td><code>'+esc(endpoint(c.remote))+'</code></td><td>'+esc(ageLabel(c.age_seconds))+'</td><td>'+esc(c.state||'-')+'</td></tr>').join('');
- $('semantic').innerHTML=(s.semantic||[]).slice().reverse().map(e=>'<tr><td>'+esc(e.observed_at||'')+'</td><td>'+esc(e.kind||'')+'</td><td>'+esc(e.protocol||'')+'</td><td>'+esc(e.direction||'-')+'</td><td>'+esc(e.reporter||'-')+'</td><td>'+esc(e.peer||'-')+'</td><td><code>'+esc(e.route||'-')+'</code></td><td>'+esc(e.status||'-')+'</td><td>'+esc(e.duration_ms?e.duration_ms+' ms':'-')+'</td><td>'+esc(semanticDetail(e))+'</td></tr>').join('');
- $('events').innerHTML=(s.events||[]).slice().reverse().map(e=>{const c=e.connection||{};return '<tr><td>'+esc(e.observed_at||'')+'</td><td>'+esc(e.kind||'')+'</td><td>'+esc(c.kind||'unknown')+'</td><td><code>'+esc(c.local||'')+'</code></td><td>'+esc(proc(c))+'</td></tr>'}).join('');
+ $('obs').textContent=cache.status.current_observations??cache.status.current_connections??'—';
+ $('collector').textContent=cache.status.collector||'—';
+ scanHealth();
+ const rows=Array.isArray(s.current)?s.current:[],fingerprint=networkFingerprint(rows);
+ if(versions.network!==fingerprint){cache.current=rows;versions.network=fingerprint;dirty.network=true;renderSection('network')}
+ updateCounts();
 }
-let startError='';
 function setStartError(message){
- startError=message||'';
- $('startError').textContent=startError;
- $('startError').style.display=startError?'block':'none';
+ startError=message||''; $('startError').textContent=startError;$('startError').hidden=!startError;
 }
-async function refresh(){
- try{
-  const snapshot=await window.go.main.App.Snapshot();
-  if((snapshot.agent||{}).running){setStartError('')}
-  render(snapshot);
- }catch(e){
-  $('state').textContent=startError||'Agent offline';
-  $('state').className='state bad';
-  $('collector').textContent='—';
-  console.error(e);
- }
+async function runTask(name,read,onData){
+ if(inFlight[name])return;
+ if(document.hidden&&name!=='network')return;
+ inFlight[name]=true;
+ try{const result=await read();if(name in sectionErrors)sectionErrors[name]=false;onData(result);}
+ catch(e){
+  if(name==='network'){$('state').textContent='Agent offline or unreadable — cached rows are not live';$('state').className='state bad';$('freshness').textContent='Last successful snapshot cached; refresh failed. '+String(e)}
+  else {sectionErrors[name]=true;updateCounts();console.warn('Tattler '+name+' refresh unavailable',e);}
+ }finally{inFlight[name]=false}
 }
-$('start').addEventListener('click',async()=>{
- const button=$('start'); button.disabled=true; button.textContent='Starting…';
- try{
-  const result=await window.go.main.App.StartAgent();
-  setStartError(result.error||'');
- }catch(e){
-  setStartError(String(e));
- }finally{
-  button.disabled=false; button.textContent='Start agent';
-  await refresh();
- }
+async function pollFast(){
+ const now=Date.now();if(document.hidden&&now-lastFast<10000)return;lastFast=now;
+ await runTask('network',()=>window.go.main.App.Network(),renderFast);
+}
+const pollFindings=()=>runTask('findings',()=>window.go.main.App.ReadFindings(),items=>{setData('findings',items);if(items?.length&&!sectionPrefs.findings)$('findings-panel').open=true});
+const pollEvents=()=>runTask('events',()=>window.go.main.App.ReadEvents(),items=>setData('events',items));
+const pollSemantic=()=>runTask('semantic',()=>window.go.main.App.ReadSemantic(),items=>{setData('semantic',items);if(items?.length&&!sectionPrefs.semantic)$('semantic-panel').open=true});
+function refilter(){dirty.network=true;renderNetwork()}
+for(const id of ['view-filter','process-filter','sort-filter'])$(id).addEventListener('change',refilter);
+$('search-filter').addEventListener('input',refilter);
+$('group-mode').addEventListener('click',()=>{grouped=!grouped;expanded.clear();refilter()});
+$('current').addEventListener('click',e=>{
+ const button=e.target.closest('button[data-key]');if(!button)return;
+ const key=decodeURIComponent(button.dataset.key);expanded.has(key)?expanded.delete(key):expanded.add(key);refilter();
 });
-refresh();setInterval(refresh,2000);
+$('filter-chips').addEventListener('click',e=>{
+ const button=e.target.closest('button[data-clear]');if(!button)return;
+ const what=button.dataset.clear;
+ if(what==='view')$('view-filter').value='all';
+ if(what==='process')$('process-filter').value='';
+ if(what==='search')$('search-filter').value='';
+ refilter();
+});
+$('start').addEventListener('click',async()=>{
+ const button=$('start');button.disabled=true;button.textContent='Starting…';
+ try{const result=await window.go.main.App.StartAgent();setStartError(result.error||'')}
+ catch(e){setStartError(String(e))}
+ finally{button.disabled=false;button.textContent='Start agent';await pollFast();pollFindings();pollEvents();pollSemantic()}
+});
+setupPanels();updateCounts();
+pollFast();pollFindings();pollEvents();pollSemantic();
+setInterval(pollFast,2000);setInterval(pollFindings,5000);
+setInterval(pollEvents,10000);setInterval(pollSemantic,10000);
+setInterval(updateAges,1000);
+document.addEventListener('visibilitychange',()=>{if(!document.hidden){pollFast();pollFindings();pollEvents();pollSemantic();updateAges()}});
 </script>
 </body>
 </html>
