@@ -86,7 +86,23 @@ jobs:
           name: tattler-armv8-spk
           path: dist/Tattler-armv8.spk
 
+      # A PR changes agent bytes without authorizing publication of a new SPK.
+      # Verify candidate staging from fresh deterministic builds separately from
+      # the immutable package-source/release.json publication manifest.
+      - name: Verify candidate SPK package-source staging
+        run: |
+          tmp="$(mktemp -d)"
+          mkdir -p "$tmp/api" "$tmp/public/releases" "$tmp/public/icons"
+          cp package-source/api/catalog.js "$tmp/api/catalog.js"
+          cp package-source/package.json package-source/test.js package-source/vercel.json "$tmp/"
+          python3 tools/update_package_source.py \
+            --spk dist/Tattler-x86_64.spk \
+            --spk dist/Tattler-armv7.spk \
+            --spk dist/Tattler-armv8.spk \
+            --output "$tmp" --icons-dir spk
+          (cd "$tmp" && node test.js)
       - name: Verify published package source binds exact SPKs
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
         run: |
           tmp="$(mktemp -d)"
           mkdir -p "$tmp/api" "$tmp/public/releases" "$tmp/public/icons"
