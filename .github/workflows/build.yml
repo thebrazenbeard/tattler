@@ -66,6 +66,8 @@ jobs:
       - name: Independent DSM 7.2.2 package verification
         run: |
           git clone -q https://github.com/thebrazenbeard/spk-packager.git /tmp/spk-packager
+          # The reviewed commit is not advertised by the repository's current branches.
+          git -C /tmp/spk-packager fetch -q origin 89085efb9e439dfd05f26ad56d857ef71f2d52b1
           git -C /tmp/spk-packager checkout -q 89085efb9e439dfd05f26ad56d857ef71f2d52b1
           for arch in x86_64 armv7 armv8; do
             PYTHONPATH=/tmp/spk-packager/src python -m spk_packager.cli verify "dist/Tattler-$arch.spk" --json
