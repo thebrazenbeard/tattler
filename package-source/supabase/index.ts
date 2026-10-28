@@ -15,6 +15,12 @@ type Release = {
   version: string;
 };
 
+// DSM's package lookup uses tiny form fields. Bound public POST bodies before
+// any text or multipart decoder can buffer an arbitrarily large upload.
+const MAX_FORM_BYTES = 8192;
+
+class RequestTooLargeError extends Error {}
+
 let releaseCache: Release | null = null;
 
 async function loadRelease(): Promise<Release> {
@@ -33,16 +39,58 @@ async function loadRelease(): Promise<Release> {
   return value;
 }
 
+async function boundedFormBytes(req: Request): Promise<Uint8Array> {
+  const declared = req.headers.get("content-length");
+  if (declared !== null && Number(declared) > MAX_FORM_BYTES) {
+    throw new RequestTooLargeError("form payload too large");
+  }
+
+  if (!req.body) return new Uint8Array();
+  const reader = req.body.getReader();
+  const parts: Uint8Array[] = [];
+  let size = 0;
+  try {
+    while (true) {
+      const { value, done } = await reader.read();
+      if (done) break;
+      size += value.byteLength;
+      if (size > MAX_FORM_BYTES) {
+        await reader.cancel().catch(() => {});
+        throw new RequestTooLargeError("form payload too large");
+      }
+      parts.push(value);
+    }
+  } finally {
+    reader.releaseLock();
+  }
+
+  const bytes = new Uint8Array(size);
+  let offset = 0;
+  for (const part of parts) {
+    bytes.set(part, offset);
+    offset += part.byteLength;
+  }
+  return bytes;
+}
+
 async function requestParams(req: Request): Promise<URLSearchParams> {
   const url = new URL(req.url);
   const params = new URLSearchParams(url.search);
   if (req.method === "POST") {
     const type = req.headers.get("content-type") || "";
     if (type.includes("application/x-www-form-urlencoded")) {
-      const body = new URLSearchParams(await req.text());
+      const body = new URLSearchParams(
+        new TextDecoder().decode(await boundedFormBytes(req)),
+      );
       for (const [key, value] of body) params.set(key, value);
     } else if (type.includes("multipart/form-data")) {
-      const form = await req.formData();
+      const bytes = await boundedFormBytes(req);
+      const boundedRequest = new Request(req.url, {
+        method: "POST",
+        headers: { "Content-Type": type },
+        body: bytes,
+      });
+      const form = await boundedRequest.formData();
       for (const [key, value] of form) {
         if (typeof value === "string") params.set(key, value);
       }
@@ -97,10 +145,8 @@ Deno.serve(async (req: Request) => {
   }
 
   try {
-    const [params, release] = await Promise.all([
-      requestParams(req),
-      loadRelease(),
-    ]);
+    const params = await requestParams(req);
+    const release = await loadRelease();
     return new Response(JSON.stringify(catalog(params, release)), {
       status: 200,
       headers: {
@@ -108,7 +154,16 @@ Deno.serve(async (req: Request) => {
         "Cache-Control": "public, max-age=300",
       },
     });
-  } catch {
+  } catch (error) {
+    if (error instanceof RequestTooLargeError) {
+      return new Response(
+        JSON.stringify({ packages: [], error: "request_too_large" }),
+        {
+          status: 413,
+          headers: { "Content-Type": "application/json; charset=utf-8" },
+        },
+      );
+    }
     return new Response(
       JSON.stringify({ packages: [], error: "catalog_request_failed" }),
       {

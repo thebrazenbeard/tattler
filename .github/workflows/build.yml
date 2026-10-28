@@ -23,6 +23,11 @@ jobs:
           for script in spk/scripts/*; do sh -n "$script"; done
           node package-source/test.js
           cmp internal/server/tattler-icon.png package-source/public/icons/PACKAGE_ICON_256.PNG
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: '24'
+      - name: Test bounded Supabase package-source handler (Node Web API shim)
+        run: node package-source/test_edge_runtime.cjs
       - name: Build DSM Linux targets twice
         run: |
           mkdir -p dist
