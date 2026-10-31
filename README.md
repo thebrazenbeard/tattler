@@ -16,7 +16,7 @@ The core agent is written in Go. A separate optional [Windows desktop companion]
 | Ownership | Kernel socket UID/account; exact PID/process when accessible | Owning PID and best-effort process-name enrichment |
 | Output | Evidence-bearing findings, bounded current observations and sampled event history | Same journal, API, and dashboard |
 
-Network endpoint samples are **not** packet traces. Journal `open`/`close` means an observation appeared/disappeared between samples, not that Tattler saw a TCP handshake or disconnect. A UDP endpoint does not establish datagram traffic or a remote peer. Process attribution can be limited by races or OS permissions.
+Network endpoint samples are **not** packet traces. Journal `open`/`close` means an observation appeared/disappeared between samples, not that Tattler saw a TCP handshake or disconnect. A UDP endpoint does not prove datagram traffic or a remote peer. Process attribution can be limited by races or OS permissions.
 
 For the detailed evidence pipeline and limitations, see [Architecture](docs/ARCHITECTURE.md).
 
@@ -78,6 +78,10 @@ The source includes DSM [SPK metadata and lifecycle scripts](spk/), a determinis
 Source and package artifacts are organized for the generic DSM families **x86_64**, **ARMv7**, and **ARMv8/AArch64**. Platform mappings, release provenance, and upgrade details are documented in [DSM package contract](docs/DSM_7_2_2_PACKAGE_CONTRACT.md) and [multi-architecture qualification](docs/PUBLIC_RELEASE_QUALIFICATION_20261006_V0004.md).
 
 Source build, CI package verification, package-source publication, installation, and **live runtime verification** are separate gates. A CI-produced SPK or a tested route does not establish that a particular NAS accepted or installed it. Historical device-specific observations belong in [qualification evidence](docs/DSM_7_2_2_RUNTIME_QUALIFICATION_20261004.md), not generic installation requirements.
+
+## Current source/package candidate
+
+The repository's recorded `0.2.0-0004` source/package qualification identifies `MULTIARCH_X86_64_ARMV7_ARMV8_SOURCE`, `PACKAGE_SOURCE_BOUND_TO_CI_ARTIFACT`, and `EXACT_HEAD_CI_RECEIPT_RECORDED`. These are **source and CI artifact labels**, not an installation or live-host acceptance claim. Consult [the exact qualification receipt](docs/PUBLIC_RELEASE_QUALIFICATION_20261006_V0004.md) (`docs/PUBLIC_RELEASE_QUALIFICATION_20261006_V0004.md`) before relying on any historical package candidate.
 
 ## Development and verification
 
