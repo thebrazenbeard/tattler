@@ -38,6 +38,12 @@ const ARCH_ALIASES: Record<string, string[]> = {
     "armv8", "aarch64", "armada37xx", "rtd1296", "rtd1619", "rtd1619b",
   ],
 };
+const MULTIARCH_TARGETS = new Set(["armv7", "armv8", "x86_64"]);
+const LEGACY_TARGETS = new Set(["armada38x"]);
+const CHECKSUM_MD5 = /^[0-9a-f]{32}$/i;
+const CHECKSUM_SHA256 = /^[0-9a-f]{64}$/i;
+const SAFE_PACKAGE_FILE = /^[A-Za-z0-9._-]+\.spk$/;
+const MAX_PACKAGE_BYTES = 1_000_000_000;
 
 function genericArch(value: string): string {
   const requested = value.trim().toLowerCase();
@@ -45,9 +51,50 @@ function genericArch(value: string): string {
     .find(([, aliases]) => aliases.includes(requested))?.[0] ?? "";
 }
 
+function validArtifact(value: unknown, targets: Set<string>): value is Artifact {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return false;
+  const item = value as Record<string, unknown>;
+  return typeof item.arch === "string" &&
+    targets.has(item.arch) &&
+    typeof item.filename === "string" &&
+    SAFE_PACKAGE_FILE.test(item.filename) &&
+    item.filename.startsWith(`Tattler-${item.arch}-`) &&
+    typeof item.md5 === "string" && CHECKSUM_MD5.test(item.md5) &&
+    typeof item.sha256 === "string" && CHECKSUM_SHA256.test(item.sha256) &&
+    typeof item.size === "number" && Number.isSafeInteger(item.size) &&
+    item.size > 0 && item.size <= MAX_PACKAGE_BYTES;
+}
+
+function validRelease(value: unknown): value is Release {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return false;
+  const release = value as Record<string, unknown>;
+  if (
+    release.package !== "Tattler" ||
+    typeof release.version !== "string" || !release.version ||
+    typeof release.min_build !== "number" ||
+    !Number.isSafeInteger(release.min_build) || release.min_build < 0
+  ) return false;
+
+  if (Object.hasOwn(release, "releases")) {
+    if (
+      !Array.isArray(release.releases) || release.releases.length === 0 ||
+      release.releases.length > MULTIARCH_TARGETS.size
+    ) return false;
+    const arches = new Set<string>();
+    return release.releases.every((artifact: unknown) => {
+      if (!validArtifact(artifact, MULTIARCH_TARGETS)) return false;
+      if (arches.has(artifact.arch)) return false;
+      arches.add(artifact.arch);
+      return true;
+    });
+  }
+  return validArtifact(release, LEGACY_TARGETS);
+}
+
 // DSM's package lookup uses tiny form fields. Bound public POST bodies before
 // any text or multipart decoder can buffer an arbitrarily large upload.
 const MAX_FORM_BYTES = 8192;
+const MAX_QUERY_BYTES = 8192;
 
 class RequestTooLargeError extends Error {}
 
@@ -61,11 +108,8 @@ async function loadRelease(): Promise<Release> {
   if (!response.ok) {
     throw new Error(`release manifest fetch failed: ${response.status}`);
   }
-  const value = await response.json() as Release;
-  if (
-    value.package !== "Tattler" ||
-    (!Array.isArray(value.releases) && value.arch !== "armada38x")
-  ) {
+  const value: unknown = await response.json();
+  if (!validRelease(value)) {
     throw new Error("release manifest identity mismatch");
   }
   releaseCache = value;
@@ -108,6 +152,11 @@ async function boundedFormBytes(req: Request): Promise<Uint8Array> {
 
 async function requestParams(req: Request): Promise<URLSearchParams> {
   const url = new URL(req.url);
+  // URL.search is serialized/percent-encoded ASCII, so length bounds the
+  // encoded query bytes before URLSearchParams allocates form entries.
+  if (url.search.length > MAX_QUERY_BYTES) {
+    throw new RequestTooLargeError("query too large");
+  }
   const params = new URLSearchParams(url.search);
   if (req.method === "POST") {
     const type = req.headers.get("content-type") || "";
