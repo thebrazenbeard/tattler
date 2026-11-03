@@ -117,5 +117,32 @@ const post = (body, headers = {}) => new Request(url, {
   response = await multiarchHandler(new Request(`${url}?arch=armada38x&build=72805`));
   assert.equal((await response.json()).packages.length, 0);
 
+  // A future release pointer is allowed only for a structurally valid,
+  // path-confined catalog. Reject malformed metadata before advertising any
+  // artifact, even if the requested architecture happens to match.
+  for (const [label, mutate, arch] of [
+    ["traversal filename", r => { r.releases[0].filename = "../../unexpected/private.spk"; }, "armada38x"],
+    ["empty architecture", r => { r.releases[0].arch = ""; }, "unknown"],
+    ["negative size", r => { r.releases[0].size = -1; }, "armada38x"],
+    ["duplicate architecture", r => { r.releases[1].arch = "armv7"; }, "armada38x"],
+  ]) {
+    const malformed = structuredClone(multiarchRelease);
+    mutate(malformed);
+    let unsafeHandler;
+    vm.runInNewContext(stripTypeScriptTypes(source), {
+      Deno: { serve(h) { unsafeHandler = h; } },
+      fetch: async () => ({ ok: true, json: async () => malformed }),
+      URL, URLSearchParams, Request, Response, TextDecoder, Uint8Array,
+    });
+    response = await unsafeHandler(new Request(
+      `${url}?arch=${arch}&build=${multiarchRelease.min_build}`,
+    ));
+    assert.equal(response.status, 502, `unsafe release: ${label}`);
+    assert.equal((await response.json()).packages.length, 0);
+  }
+
+  response = await handler(new Request(`${url}?arch=armada38x&build=72806&noise=${"x".repeat(1_000_000)}`));
+  assert.equal(response.status, 413, "oversized GET query must fail closed");
+
   console.log("Tattler Edge bounded-body + multiarch + alias parity shim: PASS");
 })().catch(e => { console.error(e); process.exitCode = 1; });
