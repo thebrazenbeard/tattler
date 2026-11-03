@@ -4,16 +4,46 @@ const rawBase =
 const releaseUrl =
   `https://raw.githubusercontent.com/thebrazenbeard/tattler/${SOURCE_COMMIT}/package-source/release.json`;
 
-type Release = {
+type Artifact = {
   arch: string;
   filename: string;
   md5: string;
-  min_build: number;
-  package: string;
   sha256: string;
   size: number;
-  version: string;
 };
+
+type Release = {
+  min_build: number;
+  package: string;
+  version: string;
+} & (
+  | (Artifact & { releases?: never })
+  | { releases: Artifact[]; arch?: never }
+);
+
+// DSM reports hardware names, while the multi-architecture manifest uses
+// portable package targets. Match the existing local catalog adapter.
+const ARCH_ALIASES: Record<string, string[]> = {
+  x86_64: [
+    "x86_64", "apollolake", "avoton", "braswell", "broadwell",
+    "broadwellnk", "bromolow", "denverton", "geminilake", "grantley",
+    "purley", "v1000", "r1000", "r1600", "epyc7002", "kvmx64",
+    "dockerx64",
+  ],
+  armv7: [
+    "armv7", "armada370", "armada375", "armada38x", "armadaxp",
+    "alpine", "alpine4k", "monaco", "comcerto2k", "hi3535",
+  ],
+  armv8: [
+    "armv8", "aarch64", "armada37xx", "rtd1296", "rtd1619", "rtd1619b",
+  ],
+};
+
+function genericArch(value: string): string {
+  const requested = value.trim().toLowerCase();
+  return Object.entries(ARCH_ALIASES)
+    .find(([, aliases]) => aliases.includes(requested))?.[0] ?? "";
+}
 
 // DSM's package lookup uses tiny form fields. Bound public POST bodies before
 // any text or multipart decoder can buffer an arbitrarily large upload.
@@ -32,7 +62,10 @@ async function loadRelease(): Promise<Release> {
     throw new Error(`release manifest fetch failed: ${response.status}`);
   }
   const value = await response.json() as Release;
-  if (value.package !== "Tattler" || value.arch !== "armada38x") {
+  if (
+    value.package !== "Tattler" ||
+    (!Array.isArray(value.releases) && value.arch !== "armada38x")
+  ) {
     throw new Error("release manifest identity mismatch");
   }
   releaseCache = value;
@@ -100,11 +133,15 @@ async function requestParams(req: Request): Promise<URLSearchParams> {
 }
 
 function catalog(params: URLSearchParams, release: Release) {
-  const arch = params.get("arch") || "";
+  const requestedArch = params.get("arch") || "";
   const build = Number.parseInt(params.get("build") || "0", 10) || 0;
   const packages = [];
 
-  if (arch === release.arch && build >= release.min_build) {
+  const artifact = Array.isArray(release.releases)
+    ? release.releases.find((item) => item.arch === genericArch(requestedArch))
+    : "filename" in release && release.arch === requestedArch ? release : undefined;
+
+  if (artifact && build >= release.min_build) {
     const icon64 = `${rawBase}/icons/PACKAGE_ICON.PNG`;
     const icon256 = `${rawBase}/icons/PACKAGE_ICON_256.PNG`;
     packages.push({
@@ -112,7 +149,7 @@ function catalog(params: URLSearchParams, release: Release) {
       version: release.version,
       dname: "Tattler",
       desc: "Low-overhead host diagnostics and passive connection observability for Synology DSM.",
-      link: `${rawBase}/releases/${release.filename}`,
+      link: `${rawBase}/releases/${artifact.filename}`,
       thumbnail: [icon64],
       thumbnail_retina: [icon256, icon256],
       snapshot: [],
@@ -123,8 +160,8 @@ function catalog(params: URLSearchParams, release: Release) {
       conflictpkgs: null,
       download_count: 0,
       recent_download_count: 0,
-      md5: release.md5,
-      size: release.size,
+      md5: artifact.md5,
+      size: artifact.size,
       maintainer: "thebrazenbeard",
       maintainer_url: "https://github.com/thebrazenbeard/tattler",
       distributor: "thebrazenbeard",
