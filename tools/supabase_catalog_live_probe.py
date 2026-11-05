@@ -13,12 +13,13 @@ import re
 import sys
 from typing import Callable
 from urllib.parse import urlencode, urlsplit
-from urllib.request import Request, urlopen
+from urllib.request import HTTPRedirectHandler, Request, build_opener
 
 DEFAULT_ENDPOINT = (
     "https://fawkirqroyniueeqspif.supabase.co/functions/v1/tattler-package-source"
 )
 DEPLOYED_SOURCE_COMMIT = "427db77274bc877b2b7d04c4970210bcda237f9e"
+EXPECTED_PROJECT_REF = "fawkirqroyniueeqspif"
 MAX_RESPONSE_BYTES = 65536
 HttpGet = Callable[[str], tuple[int, object, dict[str, str]]]
 
@@ -27,13 +28,24 @@ class ProbeError(RuntimeError):
     """The read-only service contract was not satisfied."""
 
 
+class RejectRedirects(HTTPRedirectHandler):
+    """A different effective responder must never qualify the pinned provider."""
+
+    def redirect_request(self, request, fp, code, msg, headers, newurl):
+        raise ProbeError(f"catalog HTTP {code} redirect refused")
+
+
 def live_get(url: str) -> tuple[int, object, dict[str, str]]:
     request = Request(
         url,
         method="GET",
         headers={"Accept": "application/json", "User-Agent": "Tattler-ReadOnly-Probe/1"},
     )
-    with urlopen(request, timeout=12) as response:
+    # urllib.urlopen follows redirects by default. Use a rejecting handler
+    # and verify the effective URL even if a transport/proxy misbehaves.
+    with build_opener(RejectRedirects()).open(request, timeout=12) as response:
+        if response.geturl() != url:
+            raise ProbeError("catalog effective response URL differs from requested URL")
         raw = response.read(MAX_RESPONSE_BYTES + 1)
         if len(raw) > MAX_RESPONSE_BYTES:
             raise ProbeError("catalog response exceeds the 64-KiB probe limit")
@@ -70,12 +82,16 @@ def probe(
         raise ProbeError("endpoint must be HTTPS without URL credentials")
     if url.query or url.fragment:
         raise ProbeError("endpoint must not contain a query or fragment")
+    if endpoint != DEFAULT_ENDPOINT:
+        raise ProbeError("live provider attribution requires the exact approved Supabase endpoint")
     if not re.fullmatch(r"[0-9a-f]{40}", source_commit):
         raise ProbeError("source commit must be an exact 40-character SHA")
     if not version or min_build < 1:
         raise ProbeError("expected release parameters are invalid")
 
     found, headers = packages_at(endpoint, arch, min_build, http_get)
+    if headers.get("sb-project-ref") != EXPECTED_PROJECT_REF:
+        raise ProbeError("response does not identify the approved Supabase project")
     if len(found) != 1 or not isinstance(found[0], dict):
         raise ProbeError("supported architecture must return exactly one package")
     package = found[0]
