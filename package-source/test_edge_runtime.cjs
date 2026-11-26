@@ -70,5 +70,79 @@ const post = (body, headers = {}) => new Request(url, {
   }));
   assert.equal(response.status, 413, "unknown length must be capped while streaming");
 
-  console.log("Tattler Edge bounded-body shim: 7 checks PASS");
+  // A source-pointer advance to the current multi-architecture release must
+  // preserve DSM's existing armada38x behavior and recognize other aliases.
+  // Each Deno isolate owns its own immutable-release cache.
+  const multiarchRelease = require("./release.json");
+  let multiarchHandler;
+  vm.runInNewContext(stripTypeScriptTypes(source), {
+    Deno: { serve(h) { multiarchHandler = h; } },
+    fetch: async () => ({ ok: true, json: async () => multiarchRelease }),
+    URL, URLSearchParams, Request, Response, TextDecoder, Uint8Array,
+  });
+  for (const [requested, expected] of [
+    ["armada38x", "armv7"],
+    ["rtd1296", "armv8"],
+    ["geminilake", "x86_64"],
+  ]) {
+    response = await multiarchHandler(new Request(
+      `${url}?arch=${requested}&build=${multiarchRelease.min_build}`,
+    ));
+    assert.equal(response.status, 200, `current multiarch ${requested}`);
+    const result = await response.json();
+    assert.equal(result.packages.length, 1, `current multiarch ${requested}`);
+    const artifact = multiarchRelease.releases.find(item => item.arch === expected);
+    assert.equal(result.packages[0].link.endsWith(`/${artifact.filename}`), true);
+    assert.equal(result.packages[0].md5, artifact.md5);
+    assert.equal(result.packages[0].size, artifact.size);
+  }
+
+  // The legacy Node catalog and the Edge adapter must not silently disagree
+  // about which DSM hardware labels consume each published architecture.
+  const { ARCH_ALIASES } = require("./api/catalog.js");
+  for (const [expected, aliases] of Object.entries(ARCH_ALIASES)) {
+    const artifact = multiarchRelease.releases.find(item => item.arch === expected);
+    for (const requested of aliases) {
+      response = await multiarchHandler(new Request(
+        `${url}?arch=${requested}&build=${multiarchRelease.min_build}`,
+      ));
+      const result = await response.json();
+      assert.equal(result.packages.length, 1, `DSM alias ${requested}`);
+      assert.equal(result.packages[0].link.endsWith(`/${artifact.filename}`), true);
+    }
+  }
+
+  response = await multiarchHandler(new Request(`${url}?arch=unknown&build=99999`));
+  assert.equal((await response.json()).packages.length, 0);
+  response = await multiarchHandler(new Request(`${url}?arch=armada38x&build=72805`));
+  assert.equal((await response.json()).packages.length, 0);
+
+  // A future release pointer is allowed only for a structurally valid,
+  // path-confined catalog. Reject malformed metadata before advertising any
+  // artifact, even if the requested architecture happens to match.
+  for (const [label, mutate, arch] of [
+    ["traversal filename", r => { r.releases[0].filename = "../../unexpected/private.spk"; }, "armada38x"],
+    ["empty architecture", r => { r.releases[0].arch = ""; }, "unknown"],
+    ["negative size", r => { r.releases[0].size = -1; }, "armada38x"],
+    ["duplicate architecture", r => { r.releases[1].arch = "armv7"; }, "armada38x"],
+  ]) {
+    const malformed = structuredClone(multiarchRelease);
+    mutate(malformed);
+    let unsafeHandler;
+    vm.runInNewContext(stripTypeScriptTypes(source), {
+      Deno: { serve(h) { unsafeHandler = h; } },
+      fetch: async () => ({ ok: true, json: async () => malformed }),
+      URL, URLSearchParams, Request, Response, TextDecoder, Uint8Array,
+    });
+    response = await unsafeHandler(new Request(
+      `${url}?arch=${arch}&build=${multiarchRelease.min_build}`,
+    ));
+    assert.equal(response.status, 502, `unsafe release: ${label}`);
+    assert.equal((await response.json()).packages.length, 0);
+  }
+
+  response = await handler(new Request(`${url}?arch=armada38x&build=72806&noise=${"x".repeat(1_000_000)}`));
+  assert.equal(response.status, 413, "oversized GET query must fail closed");
+
+  console.log("Tattler Edge bounded-body + multiarch + alias parity shim: PASS");
 })().catch(e => { console.error(e); process.exitCode = 1; });
